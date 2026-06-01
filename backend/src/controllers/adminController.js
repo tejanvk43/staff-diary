@@ -136,14 +136,14 @@ async function createSubject(req, res) {
 }
 
 async function createDepartment(req, res) {
-  const { department_name, department_code } = req.body;
-  if (!department_name || !department_code) {
-    return res.status(400).json({ success: false, message: 'department_name and department_code are required.' });
+  const { department_name, department_code, programme } = req.body;
+  if (!department_name || !department_code || !programme) {
+    return res.status(400).json({ success: false, message: 'department_name, department_code, and programme are required.' });
   }
   try {
     await pool.query(
-      'INSERT INTO departments (department_name, department_code) VALUES (?, ?)',
-      [department_name.trim(), department_code.trim().toUpperCase()]
+      'INSERT INTO departments (department_name, department_code, programme) VALUES (?, ?, ?)',
+      [department_name.trim(), department_code.trim().toUpperCase(), programme.trim()]
     );
     return res.status(201).json({ success: true, message: 'Department created.' });
   } catch (err) {
@@ -153,11 +153,11 @@ async function createDepartment(req, res) {
 }
 
 async function updateDepartment(req, res) {
-  const { department_name, department_code } = req.body;
+  const { department_name, department_code, programme } = req.body;
   try {
     const [result] = await pool.query(
-      'UPDATE departments SET department_name=COALESCE(?,department_name), department_code=COALESCE(?,department_code) WHERE id=?',
-      [department_name||null, department_code||null, req.params.id]
+      'UPDATE departments SET department_name=COALESCE(?,department_name), department_code=COALESCE(?,department_code), programme=COALESCE(?,programme) WHERE id=?',
+      [department_name||null, department_code||null, programme||null, req.params.id]
     );
     if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Department not found.' });
     return res.json({ success: true, message: 'Department updated.' });

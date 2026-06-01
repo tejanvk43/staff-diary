@@ -80,21 +80,74 @@ function SlotModal({ slot, day, fromTime, onClose, onSave, myBlocks, myCourses, 
   const [day_,      setDay]       = useState(slot?.day || day || 'Monday');
   const [saving,    setSaving]    = useState(false);
 
+  const targetPeriod = fromTime || (slot ? getPeriodNumber(slot.from_time, slot.education_type) : null);
+
+  const isBreakSlot = (s) => {
+    if (!s) return false;
+    const label = (s.short_name || '').toLowerCase();
+    return s.subject_type === 'Break' ||
+           label.includes('break') ||
+           label.includes('lunch') ||
+           label.includes('recess') ||
+           label.includes('interval') ||
+           label.includes('tea') ||
+           label.includes('free');
+  };
+
   useEffect(() => {
     if (!slot && fromTime && myBlocks.length > 0) {
       for (const block of myBlocks) {
         const matchingSlot = (block.slots || []).find(s => {
+          if (isBreakSlot(s)) return false;
           const pNum = getPeriodNumber(s.from_time, block.education_type);
           return pNum === fromTime;
         });
         if (matchingSlot) {
-          setBlockId(block.id);
-          setTimeSlot(`${matchingSlot.from_time}|${matchingSlot.to_time}`);
+          setCourseKey(`${block.education_type}|${block.year}|${block.section}`);
           break;
         }
       }
     }
   }, [slot, fromTime, myBlocks]);
+
+  useEffect(() => {
+    if (courseKey && myBlocks.length > 0) {
+      const parts = courseKey.split('|');
+      const eduType = parts[0];
+      const yr = parseInt(parts[1], 10);
+      const sec = parts[2];
+      const matchingBlock = myBlocks.find(b => 
+        b.education_type === eduType &&
+        b.year === yr &&
+        b.section === sec
+      );
+      if (matchingBlock) {
+        setBlockId(matchingBlock.id);
+      } else {
+        setBlockId('');
+      }
+    } else {
+      setBlockId('');
+    }
+  }, [courseKey, myBlocks]);
+
+  useEffect(() => {
+    if (targetPeriod && blockId && myBlocks.length > 0) {
+      const block = myBlocks.find(b => String(b.id) === String(blockId));
+      if (block) {
+        const matchingSlot = (block.slots || []).find(s => {
+          if (isBreakSlot(s)) return false;
+          const pNum = getPeriodNumber(s.from_time, block.education_type);
+          return pNum === targetPeriod;
+        });
+        if (matchingSlot) {
+          setTimeSlot(`${matchingSlot.from_time}|${matchingSlot.to_time}`);
+        } else {
+          setTimeSlot('');
+        }
+      }
+    }
+  }, [blockId, targetPeriod, myBlocks]);
 
   // Derived: time slots for selected block
   const selectedBlock   = myBlocks.find(b => String(b.id) === String(blockId));
@@ -186,63 +239,6 @@ function SlotModal({ slot, day, fromTime, onClose, onSave, myBlocks, myCourses, 
           </div>
         </div>
 
-        {/* Block selector */}
-        <div className="form-group">
-          <label className="form-label">Block *</label>
-          {myBlocks.length === 0 ? (
-            <p style={{ fontSize: '0.82rem', color: 'var(--color-danger)' }}>
-              No blocks assigned. Complete your profile setup first.
-            </p>
-          ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {myBlocks.map(b => (
-                <button key={b.id} type="button" onClick={() => { setBlockId(b.id); setTimeSlot(''); }}
-                  style={{
-                    padding: '7px 14px', borderRadius: 8, fontSize: '0.82rem', fontWeight: 600,
-                    cursor: 'pointer',
-                    background: String(blockId) === String(b.id) ? 'var(--color-primary)' : 'var(--color-surface-2)',
-                    color: String(blockId) === String(b.id) ? '#fff' : 'var(--color-text)',
-                    border: `1.5px solid ${String(blockId) === String(b.id) ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                    transition: 'all 0.15s',
-                  }}
-                >{b.name}</button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Time slot selector */}
-        {blockId && (
-          <div className="form-group">
-            <label className="form-label">Time Slot *</label>
-            {availableSlots.length === 0 ? (
-              <p style={{ fontSize: '0.82rem', color: 'var(--color-warning)' }}>
-                This block has no time slots defined yet.
-              </p>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {availableSlots.map((s, i) => {
-                  const key = `${s.from_time}|${s.to_time}`;
-                  return (
-                    <button key={i} type="button" onClick={() => setTimeSlot(key)}
-                      style={{
-                        padding: '7px 14px', borderRadius: 8, fontSize: '0.82rem', fontWeight: 600,
-                        cursor: 'pointer',
-                        background: timeSlot === key ? '#06b6d4' : 'var(--color-surface-2)',
-                        color: timeSlot === key ? '#fff' : 'var(--color-text)',
-                        border: `1.5px solid ${timeSlot === key ? '#06b6d4' : 'var(--color-border)'}`,
-                        transition: 'all 0.15s', fontFamily: 'monospace',
-                      }}
-                    >
-                      {s.from_time} – {s.to_time}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Course / Class selector */}
         <div className="form-group">
           <label className="form-label">Course / Class *</label>
@@ -273,6 +269,67 @@ function SlotModal({ slot, day, fromTime, onClose, onSave, myBlocks, myCourses, 
             </div>
           )}
         </div>
+
+        {/* Time slot selector */}
+        {blockId && (
+          <div className="form-group">
+            <label className="form-label">Time Slot *</label>
+            {targetPeriod ? (
+              (() => {
+                const matched = (selectedBlock?.slots || []).find(s => 
+                  !isBreakSlot(s) && getPeriodNumber(s.from_time, selectedBlock?.education_type) === targetPeriod
+                );
+                return matched ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      padding: '8px 16px',
+                      background: 'rgba(6, 182, 212, 0.08)',
+                      border: '1px solid rgba(6, 182, 212, 0.3)',
+                      borderRadius: 8,
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      color: '#0891b2',
+                      fontFamily: 'monospace',
+                    }}>
+                      {formatTime12h(matched.from_time)} – {formatTime12h(matched.to_time)} (Period {targetPeriod})
+                    </div>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                      (Extracted automatically for Period {targetPeriod})
+                    </span>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '0.82rem', color: 'var(--color-danger)' }}>
+                    No timings defined for Period {targetPeriod} in this block.
+                  </p>
+                );
+              })()
+            ) : availableSlots.length === 0 ? (
+              <p style={{ fontSize: '0.82rem', color: 'var(--color-warning)' }}>
+                This block has no time slots defined yet.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {availableSlots.map((s, i) => {
+                  const key = `${s.from_time}|${s.to_time}`;
+                  return (
+                    <button key={i} type="button" onClick={() => setTimeSlot(key)}
+                      style={{
+                        padding: '7px 14px', borderRadius: 8, fontSize: '0.82rem', fontWeight: 600,
+                        cursor: 'pointer',
+                        background: timeSlot === key ? '#06b6d4' : 'var(--color-surface-2)',
+                        color: timeSlot === key ? '#fff' : 'var(--color-text)',
+                        border: `1.5px solid ${timeSlot === key ? '#06b6d4' : 'var(--color-border)'}`,
+                        transition: 'all 0.15s', fontFamily: 'monospace',
+                      }}
+                    >
+                      {s.from_time} – {s.to_time}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Subject selector */}
         <div className="form-group">

@@ -4,16 +4,17 @@ import { Plus, Trash2, Edit2, X, Loader2, Building2 } from 'lucide-react';
 import api from '../../api/axios';
 import AppLayout from '../../components/AppLayout';
 
-function DeptModal({ dept, onClose, onSave }) {
+function DeptModal({ dept, programs, onClose, onSave }) {
   const [form, setForm] = useState({
     department_name: dept?.department_name || '',
     department_code: dept?.department_code || '',
+    programme:       dept?.programme || (programs[0]?.name || ''),
   });
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
-    if (!form.department_name || !form.department_code) {
-      toast.error('Both name and code are required.');
+    if (!form.department_name || !form.department_code || !form.programme) {
+      toast.error('Name, code, and programme are required.');
       return;
     }
     setSaving(true);
@@ -42,7 +43,21 @@ function DeptModal({ dept, onClose, onSave }) {
           <label className="form-label" htmlFor="dept-name">Department Name *</label>
           <input id="dept-name" className="input" value={form.department_name} onChange={e => setForm(f => ({ ...f, department_name: e.target.value }))} placeholder="Computer Science & Engineering" />
         </div>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+        <div className="form-group">
+          <label className="form-label" htmlFor="dept-programme">Programme *</label>
+          <select
+            id="dept-programme"
+            className="input"
+            value={form.programme}
+            onChange={e => setForm(f => ({ ...f, programme: e.target.value }))}
+          >
+            <option value="">— Select Programme —</option>
+            {programs.map(p => (
+              <option key={p.id} value={p.name}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           <button id="save-dept-btn" className="btn btn-primary" onClick={handleSave} disabled={saving}>
             {saving && <Loader2 size={14} className="spinner" />} {dept ? 'Update' : 'Add Department'}
@@ -55,6 +70,7 @@ function DeptModal({ dept, onClose, onSave }) {
 
 export default function DepartmentsPage() {
   const [departments, setDepts] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editDept, setEditDept]   = useState(null);
@@ -62,8 +78,12 @@ export default function DepartmentsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/api/admin/departments');
-      setDepts(res.data.data || []);
+      const [deptRes, progRes] = await Promise.all([
+        api.get('/api/admin/departments'),
+        api.get('/api/admin/programs'),
+      ]);
+      setDepts(deptRes.data.data || []);
+      setPrograms(progRes.data.data || []);
     } catch (_) { toast.error('Failed to load departments.'); }
     finally { setLoading(false); }
   };
@@ -119,7 +139,20 @@ export default function DepartmentsPage() {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.department_name}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace', marginTop: 2 }}>{d.department_code}</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>{d.department_code}</span>
+                  {d.programme && (
+                    <span style={{
+                      fontSize: '0.65rem',
+                      fontWeight: 700,
+                      background: 'var(--color-surface-2)',
+                      border: '1px solid var(--color-border)',
+                      padding: '1px 6px',
+                      borderRadius: 4,
+                      color: 'var(--color-primary)',
+                    }}>{d.programme}</span>
+                  )}
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 <button id={`edit-dept-${d.id}`} className="btn btn-sm btn-secondary btn-icon" onClick={() => { setEditDept(d); setShowModal(true); }} title="Edit"><Edit2 size={12} /></button>
@@ -130,7 +163,7 @@ export default function DepartmentsPage() {
         </div>
       )}
 
-      {showModal && <DeptModal dept={editDept} onClose={() => { setShowModal(false); setEditDept(null); }} onSave={handleSave} />}
+      {showModal && <DeptModal dept={editDept} programs={programs} onClose={() => { setShowModal(false); setEditDept(null); }} onSave={handleSave} />}
     </AppLayout>
   );
 }

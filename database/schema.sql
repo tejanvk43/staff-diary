@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS departments (
   department_name VARCHAR(150) NOT NULL,
   department_code VARCHAR(20)  NOT NULL UNIQUE,
   hod_employee_id VARCHAR(20)  DEFAULT NULL,
+  programme       VARCHAR(50)  DEFAULT NULL,
   created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
