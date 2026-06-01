@@ -156,4 +156,111 @@ async function conflictReport(req, res) {
   }
 }
 
-module.exports = { diaryReport, attendanceReport, leaveReport, conflictReport };
+// ─── GET /api/reports/unassigned ─────────────────────────────────────────────
+async function unassignedReport(req, res) {
+  const { format } = req.query;
+
+  try {
+    const [slots] = await pool.query(
+      `SELECT bts.*, 
+              bt.education_type AS programme, 
+              bt.year, 
+              bt.department AS branch, 
+              bt.section
+       FROM block_timetable_slots bts
+       JOIN block_timetables bt ON bts.timetable_id = bt.id
+       ORDER BY 
+         bt.education_type, 
+         bt.year, 
+         bt.department, 
+         bt.section, 
+         FIELD(bts.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'), 
+         bts.from_time`
+    );
+
+    const reportRows = [];
+
+    const formatTime = (timeStr) => {
+      if (!timeStr) return '';
+      const parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        return `${parts[0]}:${parts[1]}`;
+      }
+      return timeStr;
+    };
+
+    for (const slot of slots) {
+      if (slot.subject_type === 'Break') {
+        continue;
+      }
+
+      // Check if faculty is assigned
+      let hasFaculty = false;
+      if (slot.faculty_id) {
+        hasFaculty = true;
+      } else {
+        try {
+          const flist = slot.faculty_list ? (typeof slot.faculty_list === 'string' ? JSON.parse(slot.faculty_list) : slot.faculty_list) : [];
+          if (Array.isArray(flist) && flist.length > 0) {
+            hasFaculty = true;
+          }
+        } catch (e) {
+          // ignore parsing error
+        }
+      }
+
+      // Check if subject is assigned
+      const hasSubject = slot.subject_id !== null || 
+                         (slot.short_name && slot.short_name.trim() !== '') || 
+                         (slot.subject_name && slot.subject_name.trim() !== '');
+
+      // Exclude fully-assigned slots
+      if (hasSubject && hasFaculty) {
+        continue;
+      }
+
+      let status = '';
+      if (!hasSubject && !hasFaculty) {
+        status = 'not assigned';
+      } else if (hasFaculty && !hasSubject) {
+        status = 'staff was assigned no subject';
+      } else if (hasSubject && !hasFaculty) {
+        status = 'only subject added no faculty added';
+      }
+
+      const timings = `${formatTime(slot.from_time)} - ${formatTime(slot.to_time)}`;
+
+      reportRows.push({
+        programme: slot.programme || '—',
+        year: slot.year || '—',
+        branch: slot.branch || '—',
+        section: slot.section || '—',
+        day: slot.day,
+        timings: timings,
+        status: status
+      });
+    }
+
+    if (format === 'excel') {
+      const buffer = generateExcelBuffer(reportRows.map(r => ({
+        Programme: r.programme,
+        Year: r.year,
+        Branch: r.branch,
+        Section: r.section,
+        Day: r.day,
+        Timings: r.timings,
+        Status: r.status,
+      })), 'Unassigned Classes');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename="unassigned_classes_report.xlsx"');
+      return res.send(buffer);
+    }
+
+    return res.json({ success: true, data: reportRows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+}
+
+module.exports = { diaryReport, attendanceReport, leaveReport, conflictReport, unassignedReport };

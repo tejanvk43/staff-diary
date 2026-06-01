@@ -13,8 +13,8 @@ import { useState } from 'react';
 const FACULTY_NAV = [
   { to: '/dashboard',      icon: LayoutDashboard,      label: "Today's Diary" },
   { to: '/diary',          icon: BookOpen,             label: 'Diary History' },
-  { to: '/timetable',      icon: CalendarDays,         label: 'Timetable' },
   { to: '/setup',          icon: SlidersHorizontal,    label: 'My Setup' },
+  { to: '/timetable',      icon: CalendarDays,         label: 'Timetable' },
   { to: '/leave',          icon: Calendar,             label: 'Leave & OD' },
   { to: '/request-edit',   icon: Edit2,                label: 'Request Edit' },
   { to: '/my-requests',    icon: ClipboardList,        label: 'My Requests' },

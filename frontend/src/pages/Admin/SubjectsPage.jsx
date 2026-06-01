@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import {
   Plus, Trash2, Edit2, X, Loader2, BookOpen,
-  Layers, Settings, Users, ChevronRight, AlertCircle,
+  Layers, Users, AlertCircle, Upload, Download, FileSpreadsheet,
+  CheckCircle2, XCircle, RotateCcw,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import api from '../../api/axios';
 import AppLayout from '../../components/AppLayout';
 
@@ -232,6 +234,11 @@ export default function SubjectsPage() {
   const [deptFilter, setDeptFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
 
+  // ── Bulk upload state ─────────────────────────────────────────────────────
+  const fileInputRef           = useRef(null);
+  const [uploading, setUploading]   = useState(false);
+  const [uploadResult, setUploadResult] = useState(null); // null | { total, created, failed, errorRows }
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -281,6 +288,19 @@ export default function SubjectsPage() {
     }
   };
 
+  const handleReset = async () => {
+    if (!confirm(`⚠️ This will permanently delete ALL ${subjects.length} subjects.\n\nAre you sure?`)) return;
+    if (!confirm('Second confirmation: This action cannot be undone. Delete all subjects?')) return;
+    try {
+      const res = await api.delete('/api/admin/subjects/reset');
+      toast.success(res.data.message || 'All subjects deleted.');
+      setUploadResult(null);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Reset failed.');
+    }
+  };
+
   // ── Subject Type handlers ─────────────────────────────────────────────────
   const handleSaveType = async (form) => {
     if (editType) {
@@ -311,6 +331,59 @@ export default function SubjectsPage() {
     return true;
   });
 
+  // ── Bulk upload handler ───────────────────────────────────────────────────
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!fileInputRef.current) return;
+    fileInputRef.current.value = '';
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    setUploading(true);
+    try {
+      const res = await api.post('/api/admin/subjects/bulk', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const data = res.data.data;
+      setUploadResult(data);
+      if (data.failed === 0) {
+        toast.success(`Imported ${data.created} subject${data.created !== 1 ? 's' : ''} successfully!`);
+      } else {
+        toast(`${data.created} imported, ${data.failed} failed — check the report below.`, { icon: '⚠️' });
+      }
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Upload failed.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ── Template download ─────────────────────────────────────────────────────
+  const downloadTemplate = () => {
+    // Exact column order matching the user's Excel format
+    const headers = [[
+      'Programme', 'Regulation', 'Branch Name', 'Branch Sname',
+      'Year', 'Semester', 'Sub Code', 'Sub Sname', 'Sub Name', 'Sub Type',
+    ]];
+    const example = [[
+      programs[0]?.name       || 'B-Tech',
+      'R20',
+      departments[0]?.department_name || 'Computer Science and Engineering',
+      departments[0]?.department_code || 'CSE',
+      2, 3,
+      'CS3001', 'DS', 'Data Structures',
+      subjectTypes[0]?.name   || 'Theory',
+    ]];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([...headers, ...example]);
+    // Column widths (chars)
+    ws['!cols'] = [12, 10, 32, 12, 6, 8, 12, 10, 36, 12].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Subjects');
+    XLSX.writeFile(wb, 'subjects_template.xlsx');
+  };
+
   // ── Shared tab style ──────────────────────────────────────────────────────
   const tabStyle = (key) => ({
     display: 'flex', alignItems: 'center', gap: 7,
@@ -331,12 +404,41 @@ export default function SubjectsPage() {
             {subjects.length} subjects · {subjectTypes.length} types configured
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {activeTab === 'catalogue' && (
-            <button id="add-subject-btn" className="btn btn-primary"
-              onClick={() => { setEditSubject(null); setShowSubjectModal(true); }}>
-              <Plus size={14} /> Add Subject
-            </button>
+            <>
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+              />
+              <button id="download-template-btn" className="btn btn-secondary"
+                onClick={downloadTemplate} title="Download blank Excel template">
+                <Download size={14} /> Template
+              </button>
+              <button id="import-subjects-btn" className="btn btn-secondary"
+                onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                {uploading ? <Loader2 size={14} className="spinner" /> : <Upload size={14} />}
+                {uploading ? 'Importing…' : 'Import Excel'}
+              </button>
+              <button
+                id="reset-subjects-btn"
+                className="btn"
+                style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--color-danger)', border: '1px solid rgba(239,68,68,0.3)' }}
+                onClick={handleReset}
+                disabled={subjects.length === 0}
+                title="Delete all subjects"
+              >
+                <RotateCcw size={14} /> Reset All
+              </button>
+              <button id="add-subject-btn" className="btn btn-primary"
+                onClick={() => { setEditSubject(null); setShowSubjectModal(true); }}>
+                <Plus size={14} /> Add Subject
+              </button>
+            </>
           )}
           {activeTab === 'types' && (
             <button id="add-type-btn" className="btn btn-primary"
@@ -356,6 +458,62 @@ export default function SubjectsPage() {
           <Layers size={15} /> Subject Types
         </button>
       </div>
+
+      {/* ── Upload Result Panel ── */}
+      {uploadResult && (
+        <div style={{
+          borderRadius: 12, border: '1px solid',
+          borderColor: uploadResult.failed === 0 ? 'rgba(16,185,129,0.35)' : 'rgba(245,158,11,0.35)',
+          background: uploadResult.failed === 0 ? 'rgba(16,185,129,0.07)' : 'rgba(245,158,11,0.07)',
+          padding: '16px 18px', marginBottom: 20,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {uploadResult.failed === 0
+                ? <CheckCircle2 size={20} style={{ color: '#34d399', flexShrink: 0 }} />
+                : <XCircle size={20} style={{ color: '#fbbf24', flexShrink: 0 }} />}
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                  Import Complete — {uploadResult.created} of {uploadResult.total} row{uploadResult.total !== 1 ? 's' : ''} imported
+                  {uploadResult.failed > 0 && `, ${uploadResult.failed} skipped`}
+                </div>
+                {uploadResult.failed > 0 && (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                    Fix the issues below and re-upload only the failed rows.
+                  </div>
+                )}
+              </div>
+            </div>
+            <button className="btn-icon" style={{ background: 'transparent', color: 'var(--color-text-muted)' }}
+              onClick={() => setUploadResult(null)}>
+              <X size={15} />
+            </button>
+          </div>
+
+          {uploadResult.errorRows?.length > 0 && (
+            <div style={{ marginTop: 14, maxHeight: 220, overflowY: 'auto' }}>
+              <table style={{ width: '100%', fontSize: '0.78rem', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600 }}>Row</th>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600 }}>Code</th>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--color-text-muted)', fontWeight: 600 }}>Issues</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uploadResult.errorRows.map((r, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                      <td style={{ padding: '5px 8px', fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>{r.row}</td>
+                      <td style={{ padding: '5px 8px', fontFamily: 'monospace', color: 'var(--color-primary-light)' }}>{r.subject_code}</td>
+                      <td style={{ padding: '5px 8px', color: 'var(--color-danger)' }}>{r.reasons.join(' · ')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="empty-state"><Loader2 size={28} className="spinner" style={{ color: 'var(--color-primary)' }} /></div>

@@ -320,7 +320,7 @@ function SlotCell({ slot, onEdit, onDelete }) {
     displayBranch = parts[0];
     displayCode = parts.slice(1).join('_');
   }
-  const mainTitle = displayBranch ? `${displayCode} (${displayBranch})` : displayCode;
+  const mainTitle = displayCode;
 
   const ROMAN_YEARS = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
   const yrLabel = `${ROMAN_YEARS[slot.year] || slot.year} Year`;
@@ -328,7 +328,7 @@ function SlotCell({ slot, onEdit, onDelete }) {
   const isEvenSemester = currentMonth >= 0 && currentMonth <= 5;
   const semNumber = isEvenSemester ? (slot.year * 2) : (slot.year * 2 - 1);
   const semLabel = semNumber % 2 === 0 ? 'II Semester' : 'I Semester';
-  const secLabel = slot.section ? `, Sec-${slot.section.split('-').pop()}` : '';
+  const secLabel = slot.section ? `, ${slot.section}` : '';
 
   const formattedTimings = `${formatTime12h(slot.from_time)} - ${formatTime12h(slot.to_time)}`;
   const blockName = slot.room_number || '';

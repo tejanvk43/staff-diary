@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { hasTimeCollisionByTime } = require('../utils/timeConflict');
 
 // ─── GET /api/faculty/setup ───────────────────────────────────────────────────
 async function getSetup(req, res) {
@@ -23,8 +24,13 @@ async function getSetup(req, res) {
        WHERE fs.employee_id = ? ORDER BY s.education_type, s.year, s.subject_name`,
       [employee_id]
     );
+    const [otherWorks] = await pool.query(
+      `SELECT * FROM faculty_other_works WHERE employee_id = ? 
+       ORDER BY FIELD(day, 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), from_time`,
+      [employee_id]
+    );
     const isComplete = courses.length > 0 && blocks.length > 0 && subjects.length > 0;
-    return res.json({ success: true, data: { courses, blocks, subjects, isComplete } });
+    return res.json({ success: true, data: { courses, blocks, subjects, otherWorks, isComplete } });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error.' });
@@ -34,7 +40,7 @@ async function getSetup(req, res) {
 // ─── POST /api/faculty/setup ──────────────────────────────────────────────────
 async function saveSetup(req, res) {
   const { employee_id } = req.user;
-  const { courses = [], block_ids = [], subject_ids = [] } = req.body;
+  const { courses = [], block_ids = [], subject_ids = [], other_works = [] } = req.body;
 
   if (!courses.length || !block_ids.length || !subject_ids.length) {
     return res.status(400).json({
@@ -46,6 +52,53 @@ async function saveSetup(req, res) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+
+    // ─── VALIDATE TIME CONFLICTS ───
+    // Fetch all current weekly timetable slots for this user
+    const [regularSlots] = await conn.query(
+      'SELECT day, from_time, to_time FROM timetables WHERE employee_id = ?',
+      [employee_id]
+    );
+
+    // Validate that other works do not overlap with regular slots
+    for (const ow of other_works) {
+      if (!ow.day || !ow.from_time || !ow.to_time || !ow.duty_name) {
+        throw new Error('All other work entries must have Day, Time, and Duty Name.');
+      }
+      if (ow.from_time >= ow.to_time) {
+        throw new Error(`Invalid times: "${ow.duty_name}" start time must be before end time.`);
+      }
+
+      // Check conflict with regular slots on the same day
+      const sameDayReg = regularSlots.filter(r => r.day === ow.day);
+      if (hasTimeCollisionByTime(sameDayReg, ow.from_time, ow.to_time)) {
+        const overlapping = sameDayReg.find(r => {
+          const s1 = r.from_time.slice(0, 5);
+          const e1 = r.to_time.slice(0, 5);
+          const s2 = ow.from_time.slice(0, 5);
+          const e2 = ow.to_time.slice(0, 5);
+          return s2 < e1 && s1 < e2;
+        });
+        throw new Error(`Conflict: "${ow.duty_name}" on ${ow.day} (${ow.from_time} - ${ow.to_time}) overlaps with your regular class timetable slot (${overlapping.from_time.slice(0,5)} - ${overlapping.to_time.slice(0,5)}).`);
+      }
+    }
+
+    // Validate that other works do not overlap with each other
+    for (let i = 0; i < other_works.length; i++) {
+      const ow1 = other_works[i];
+      for (let j = i + 1; j < other_works.length; j++) {
+        const ow2 = other_works[j];
+        if (ow1.day === ow2.day) {
+          const s1 = ow1.from_time.slice(0, 5);
+          const e1 = ow1.to_time.slice(0, 5);
+          const s2 = ow2.from_time.slice(0, 5);
+          const e2 = ow2.to_time.slice(0, 5);
+          if (s1 < e2 && s2 < e1) {
+            throw new Error(`Conflict: "${ow1.duty_name}" overlaps with "${ow2.duty_name}" on ${ow1.day}.`);
+          }
+        }
+      }
+    }
 
     // Replace courses
     await conn.query('DELETE FROM faculty_courses WHERE employee_id = ?', [employee_id]);
@@ -71,12 +124,26 @@ async function saveSetup(req, res) {
       [subjVals]
     );
 
+    // Replace other works
+    await conn.query('DELETE FROM faculty_other_works WHERE employee_id = ?', [employee_id]);
+    if (other_works.length > 0) {
+      const otherVals = other_works.map(ow => [employee_id, ow.day, ow.from_time, ow.to_time, ow.duty_name.trim()]);
+      await conn.query(
+        'INSERT INTO faculty_other_works (employee_id, day, from_time, to_time, duty_name) VALUES ?',
+        [otherVals]
+      );
+    }
+
     await conn.commit();
     return res.json({ success: true, message: 'Setup saved.' });
   } catch (err) {
     await conn.rollback();
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Server error.' });
+    const isCustom = err.message && (err.message.startsWith('Conflict:') || err.message.startsWith('Invalid') || err.message.startsWith('All other'));
+    return res.status(isCustom ? 400 : 500).json({ 
+      success: false, 
+      message: isCustom ? err.message : 'Server error.' 
+    });
   } finally {
     conn.release();
   }

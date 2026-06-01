@@ -86,13 +86,31 @@ async function getDepartments(req, res) {
 
 // ─── Subjects ─────────────────────────────────────────────────────────────────
 async function getSubjects(req, res) {
-  const { department, education_type } = req.query;
+  const { department, education_type, branch_sname, q } = req.query;
   try {
     let sql = 'SELECT * FROM subjects WHERE 1=1';
     const params = [];
-    if (department)     { sql += ' AND department = ?';     params.push(department); }
-    if (education_type) { sql += ' AND education_type = ?'; params.push(education_type); }
-    sql += ' ORDER BY subject_name';
+    if (department)     { sql += ' AND department = ?';                    params.push(department); }
+    if (branch_sname)   { sql += ' AND branch_sname = ?';                  params.push(branch_sname); }
+    if (education_type) { sql += ' AND education_type = ?';                params.push(education_type); }
+    if (q)              { sql += ' AND (subject_name LIKE ? OR subject_code LIKE ? OR short_name LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+    sql += ' ORDER BY subject_type, subject_name';
+    const [rows] = await pool.query(sql, params);
+    return res.json({ success: true, data: rows });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+}
+
+// ─── Faculty list (for timetable pickers) ──────────────────────────────────────
+async function getFacultyList(req, res) {
+  const { department } = req.query;
+  try {
+    let sql = `SELECT employee_id, full_name, short_name, department, designation, role
+               FROM users WHERE role IN ('Faculty','HOD','Admin')`;
+    const params = [];
+    if (department) { sql += ' AND department = ?'; params.push(department); }
+    sql += ' ORDER BY full_name';
     const [rows] = await pool.query(sql, params);
     return res.json({ success: true, data: rows });
   } catch (err) {
@@ -101,17 +119,17 @@ async function getSubjects(req, res) {
 }
 
 async function createSubject(req, res) {
-  const { subject_code, subject_name, subject_type, education_type, year, semester, department } = req.body;
+  const { subject_code, branch_sname, regulation, subject_name, short_name, subject_type, education_type, year, semester, department } = req.body;
   try {
     await pool.query(
-      `INSERT INTO subjects (subject_code, subject_name, subject_type, education_type, year, semester, department)
-       VALUES (?,?,?,?,?,?,?)`,
-      [subject_code, subject_name, subject_type, education_type, year, semester, department]
+      `INSERT INTO subjects (subject_code, branch_sname, regulation, subject_name, short_name, subject_type, education_type, year, semester, department)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [subject_code, branch_sname||null, regulation||null, subject_name, short_name||null, subject_type, education_type, year, semester, department]
     );
     return res.status(201).json({ success: true, message: 'Subject created.' });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ success: false, message: 'Subject code already exists.' });
+      return res.status(409).json({ success: false, message: `Subject code '${subject_code}' already exists for this branch.` });
     }
     return res.status(500).json({ success: false, message: 'Server error.' });
   }
@@ -159,19 +177,38 @@ async function deleteDepartment(req, res) {
 }
 
 async function updateSubject(req, res) {
-  const { subject_code, subject_name, subject_type, education_type, year, semester, department } = req.body;
+  const { subject_code, branch_sname, regulation, subject_name, short_name, subject_type, education_type, year, semester, department } = req.body;
   try {
     const [result] = await pool.query(
-      `UPDATE subjects SET subject_code=COALESCE(?,subject_code), subject_name=COALESCE(?,subject_name),
-       subject_type=COALESCE(?,subject_type), education_type=COALESCE(?,education_type),
-       year=COALESCE(?,year), semester=COALESCE(?,semester), department=COALESCE(?,department)
+      `UPDATE subjects SET
+         subject_code=COALESCE(?,subject_code),
+         branch_sname=COALESCE(?,branch_sname),
+         regulation=COALESCE(?,regulation),
+         subject_name=COALESCE(?,subject_name),
+         short_name=COALESCE(?,short_name),
+         subject_type=COALESCE(?,subject_type),
+         education_type=COALESCE(?,education_type),
+         year=COALESCE(?,year),
+         semester=COALESCE(?,semester),
+         department=COALESCE(?,department)
        WHERE id=?`,
-      [subject_code||null, subject_name||null, subject_type||null, education_type||null,
-       year||null, semester||null, department||null, req.params.id]
+      [subject_code||null, branch_sname||null, regulation||null, subject_name||null, short_name||null,
+       subject_type||null, education_type||null, year||null, semester||null, department||null,
+       req.params.id]
     );
     if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Subject not found.' });
     return res.json({ success: true, message: 'Subject updated.' });
   } catch (err) {
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+}
+
+async function resetSubjects(req, res) {
+  try {
+    const [result] = await pool.query('DELETE FROM subjects');
+    return res.json({ success: true, deleted: result.affectedRows, message: `All ${result.affectedRows} subjects deleted.` });
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ success: false, message: 'Server error.' });
   }
 }
@@ -184,6 +221,176 @@ async function deleteSubject(req, res) {
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Server error.' });
   }
+}
+
+// ─── Subjects Bulk Upload ─────────────────────────────────────────────────────
+
+async function bulkUploadSubjects(req, res) {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No file uploaded.' });
+  }
+
+  let rows;
+  try {
+    rows = parseExcelBuffer(req.file.buffer);
+  } catch (err) {
+    return res.status(400).json({ success: false, message: `Excel parse error: ${err.message}` });
+  }
+
+  if (!rows.length) {
+    return res.status(400).json({ success: false, message: 'The uploaded file has no data rows.' });
+  }
+
+  // Load valid subject types and programs once for cross-validation
+  const [validTypes]    = await pool.query('SELECT name, short_name FROM subject_types');
+  const [validPrograms] = await pool.query('SELECT name FROM programs');
+  const [validDepts]    = await pool.query('SELECT department_name, department_code FROM departments');
+
+  // Subject type lookup: keyed by lower-case full name AND short_name → canonical row
+  // e.g. 'theory' → {name:'Theory',...}, 'th' → {name:'Theory',...}, 't' → {name:'Theory',...}
+  const typeByKey = {};
+  validTypes.forEach(t => {
+    typeByKey[t.name.toLowerCase()] = t;
+    if (t.short_name) typeByKey[t.short_name.toLowerCase()] = t;
+  });
+
+  // Helper: normalise a programme string for fuzzy matching
+  // Strips dots, hyphens, spaces and lower-cases → 'M.Tech' = 'M-Tech' = 'mtech'
+  const normProg = (s) => String(s).toLowerCase().replace(/[.\-\s]/g, '');
+  const programMap = {};  // normalised key → canonical name
+  validPrograms.forEach(p => { programMap[normProg(p.name)] = p.name; });
+
+  // Build short-code → full name map for departments (Branch Sname fallback)
+  const deptShortMap = {};
+  validDepts.forEach(d => { deptShortMap[d.department_code.toLowerCase()] = d.department_name; });
+
+  const successRows = [];
+  const errorRows   = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const raw    = rows[i];
+    const rowNum = i + 2; // Excel row (1-indexed header + 1)
+
+    // ─── Read exact column headers from the user's Excel format ───────────
+    // Col order: Programme | Regulation | Branch Name | Branch Sname | Year | Semester | Sub Code | Sub Sname | Sub Name | Sub Type
+    const education_type = String(
+      raw['Programme'] || raw['programme'] || raw['Program'] || raw['program'] ||
+      raw['Education Type'] || raw['education_type'] || ''
+    ).trim();
+
+    const regulation = String(
+      raw['Regulation'] || raw['regulation'] || raw['Reg'] || raw['reg'] || ''
+    ).trim();
+
+    // Branch Sname: read directly from Excel — used as part of the unique key
+    const branch_sname = String(
+      raw['Branch Sname'] || raw['branch sname'] || raw['Branch sname'] ||
+      raw['Branch_Sname'] || raw['dept_code'] || ''
+    ).trim().toUpperCase() || null;
+
+    // Branch Name: full department name
+    let department = String(
+      raw['Branch Name'] || raw['branch name'] || raw['Branch name'] ||
+      raw['department'] || raw['Department'] || ''
+    ).trim();
+    // Fallback: resolve branch_sname → full dept name via deptShortMap
+    if (!department && branch_sname) {
+      department = deptShortMap[branch_sname.toLowerCase()] || branch_sname;
+    }
+
+    const year = raw['Year'] || raw['year'];
+    const semester = raw['Semester'] || raw['semester'] ||
+                     raw['Sem ester'] || raw['Sem\nester'] || raw['SemEster'] || raw['SEMESTER'];
+
+    const subject_code = String(
+      raw['Sub Code'] || raw['sub code'] || raw['Sub code'] ||
+      raw['subject_code'] || raw['Subject Code'] || raw['SubCode'] || ''
+    ).trim();
+
+    // Sub Sname = subject short name
+    const short_name = String(
+      raw['Sub Sname'] || raw['sub sname'] || raw['Sub sname'] ||
+      raw['Sub Name Short'] || raw['short_name'] || raw['Short Name'] || ''
+    ).trim();
+
+    const subject_name = String(
+      raw['Sub Name'] || raw['sub name'] || raw['Sub name'] ||
+      raw['subject_name'] || raw['Subject Name'] || ''
+    ).trim();
+
+    const subject_type = String(
+      raw['Sub Type'] || raw['sub type'] || raw['Sub type'] ||
+      raw['subject_type'] || raw['Subject Type'] || raw['Type'] || ''
+    ).trim();
+
+    // ─── Validation ───────────────────────────────────────────────────────
+    const errs = [];
+    if (!subject_code)   errs.push('Sub Code is required');
+    if (!subject_name)   errs.push('Sub Name is required');
+    if (!department)     errs.push('Branch Name is required');
+    if (!education_type) errs.push('Programme is required');
+
+    // ── Subject type: match by short_name first, then full name ─────────────
+    const matchedType = subject_type ? typeByKey[subject_type.toLowerCase()] : null;
+    if (!subject_type) {
+      errs.push('Sub Type is required');
+    } else if (!matchedType) {
+      const knownKeys = validTypes.map(t => t.short_name ? `${t.name} (${t.short_name})` : t.name).join(', ');
+      errs.push(`Unknown Sub Type '${subject_type}' — known types: ${knownKeys}`);
+    }
+
+    // ── Programme: fuzzy match (M.Tech = M-Tech = MTech) ─────────────────────
+    const canonicalProg = education_type ? programMap[normProg(education_type)] : null;
+    if (!education_type) {
+      errs.push('Programme is required');
+    } else if (!canonicalProg) {
+      errs.push(`Unknown Programme '${education_type}' — must match a configured program`);
+    }
+
+    const yr  = year     !== undefined && year     !== null && year     !== '' ? parseInt(year)     : NaN;
+    const sem = semester !== undefined && semester !== null && semester !== '' ? parseInt(semester) : null;
+
+    if (isNaN(yr) || yr < 1 || yr > 6)         errs.push(`Invalid Year '${year}' — must be 1–6`);
+    if (sem !== null && (isNaN(sem) || sem < 1 || sem > 12)) errs.push(`Invalid Semester '${semester}'`);
+
+    if (errs.length) {
+      errorRows.push({ row: rowNum, subject_code: subject_code || '(blank)', reasons: errs });
+      continue;
+    }
+
+    const canonicalType = matchedType.name;
+
+    try {
+      await pool.query(
+        `INSERT INTO subjects (subject_code, branch_sname, regulation, subject_name, short_name, subject_type, education_type, year, semester, department)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          subject_code,
+          branch_sname || null,
+          regulation || null,
+          subject_name,
+          short_name || null,
+          canonicalType,
+          canonicalProg,
+          yr,
+          sem,
+          department,
+        ]
+      );
+      successRows.push(subject_code);
+    } catch (err) {
+      if (err.code === 'ER_DUP_ENTRY') {
+        errorRows.push({ row: rowNum, subject_code, reasons: [`Sub Code '${subject_code}' already exists for branch '${branch_sname || '?'}' — skipped.`] });
+      } else {
+        errorRows.push({ row: rowNum, subject_code, reasons: [err.message] });
+      }
+    }
+  }
+
+  return res.json({
+    success: true,
+    data: { total: rows.length, created: successRows.length, failed: errorRows.length, errorRows },
+  });
 }
 
 // ─── Sections CRUD ───────────────────────────────────────────────────────────
@@ -714,7 +921,8 @@ module.exports = {
   getHolidays, addHoliday, deleteHoliday,
   getWorkingSundays, addWorkingSunday, deleteWorkingSunday,
   getDepartments, createDepartment, updateDepartment, deleteDepartment,
-  getSubjects, createSubject, updateSubject, deleteSubject,
+  getSubjects, createSubject, updateSubject, deleteSubject, resetSubjects, bulkUploadSubjects,
+  getFacultyList,
   getSections, createSection, updateSection, deleteSection, bulkUploadSections,
   getPrograms, createProgram, deleteProgram, addProgramYear, deleteProgramYear,
   addProgramBranch, deleteProgramBranch, getAllProgramDetails,

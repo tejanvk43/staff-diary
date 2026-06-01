@@ -20,6 +20,7 @@ export default function FacultySetupPage({ onComplete }) {
   const [allSubjects, setAllSubjects] = useState([]);
   const [assignedBlocks, setAssignedBlocks] = useState([]); // Loaded from admin block assignments
   const [allBlocks, setAllBlocks] = useState([]); // Loaded all block timetables in the system
+  const [otherWorks, setOtherWorks] = useState([]);
 
   // Filter available options based on checked checkboxes
   const allowedPrograms = Object.keys(programmes).filter(p => programmes[p]);
@@ -63,8 +64,9 @@ export default function FacultySetupPage({ onComplete }) {
         setAllSubjects(subjRes.data.data || []);
         setAllBlocks(allBlocksRes.data.data || []);
 
-        const { courses: c, blocks: b, subjects: s } = setupRes.data.data;
+        const { courses: c, blocks: b, subjects: s, otherWorks: ow } = setupRes.data.data;
         setAssignedBlocks(b || []);
+        setOtherWorks((ow || []).map(o => ({ ...o, id: Math.random() })));
 
         // 1. Reconstruct programmes checkboxes based on assigned blocks and db programs
         const pgMap = {};
@@ -195,6 +197,21 @@ export default function FacultySetupPage({ onComplete }) {
     }));
   };
 
+  const addOtherRow = () => {
+    setOtherWorks(prev => [
+      ...prev,
+      { id: Math.random(), day: 'Monday', from_time: '10:00', to_time: '11:00', duty_name: '' }
+    ]);
+  };
+
+  const removeOtherRow = (id) => {
+    setOtherWorks(prev => prev.filter(row => row.id !== id));
+  };
+
+  const updateOtherRow = (id, field, value) => {
+    setOtherWorks(prev => prev.map(row => row.id === id ? { ...row, [field]: value } : row));
+  };
+
   const handleSave = async () => {
     const activeProgs = Object.keys(programmes).filter(k => programmes[k]);
     if (activeProgs.length === 0) {
@@ -206,6 +223,36 @@ export default function FacultySetupPage({ onComplete }) {
     if (invalid) {
       toast.error('Please complete all dropdown selections or remove empty rows.');
       return;
+    }
+
+    // Validate other works
+    for (const ow of otherWorks) {
+      if (!ow.day || !ow.from_time || !ow.to_time || !ow.duty_name?.trim()) {
+        toast.error('Please complete all fields in Other Works table.');
+        return;
+      }
+      if (ow.from_time >= ow.to_time) {
+        toast.error(`Invalid times: start time must be before end time for "${ow.duty_name}".`);
+        return;
+      }
+    }
+
+    // Check overlaps between other works
+    for (let i = 0; i < otherWorks.length; i++) {
+      const ow1 = otherWorks[i];
+      for (let j = i + 1; j < otherWorks.length; j++) {
+        const ow2 = otherWorks[j];
+        if (ow1.day === ow2.day) {
+          const s1 = ow1.from_time.slice(0, 5);
+          const e1 = ow1.to_time.slice(0, 5);
+          const s2 = ow2.from_time.slice(0, 5);
+          const e2 = ow2.to_time.slice(0, 5);
+          if (s1 < e2 && s2 < e1) {
+            toast.error(`Conflict: "${ow1.duty_name}" overlaps with "${ow2.duty_name}" on ${ow1.day}.`);
+            return;
+          }
+        }
+      }
     }
 
     setSaving(true);
@@ -246,7 +293,13 @@ export default function FacultySetupPage({ onComplete }) {
       await api.post('/api/faculty/setup', {
         courses: compiledCourses,
         block_ids: finalBlockIds,
-        subject_ids: compiledSubjectIds
+        subject_ids: compiledSubjectIds,
+        other_works: otherWorks.map(ow => ({
+          day: ow.day,
+          from_time: ow.from_time,
+          to_time: ow.to_time,
+          duty_name: ow.duty_name.trim()
+        }))
       });
 
       toast.success('Profile setup saved successfully!');
@@ -500,6 +553,120 @@ export default function FacultySetupPage({ onComplete }) {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Box 3: Other Works Section */}
+      <div className="card" style={{ padding: '24px 28px', marginBottom: 24 }}>
+        <div style={{ marginBottom: 16 }}>
+          <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-text)' }}>
+            Other Works (Weekly Schedule):
+          </span>
+        </div>
+        <div style={{ overflowX: 'auto', margin: '0 -28px', padding: '0 28px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'none' }}>
+                <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 64, padding: '10px 8px', fontWeight: 700 }}>S.No</th>
+                <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 180, padding: '10px 8px', fontWeight: 700 }}>Day</th>
+                <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 140, padding: '10px 8px', fontWeight: 700 }}>From Time</th>
+                <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 140, padding: '10px 8px', fontWeight: 700 }}>To Time</th>
+                <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', padding: '10px 8px', fontWeight: 700 }}>Duty Name</th>
+                <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 70, padding: '10px 8px', textAlign: 'center', fontWeight: 700 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {otherWorks.map((row, idx) => (
+                <tr key={row.id} style={{ background: 'none' }} className="fade-in">
+                  {/* S.No */}
+                  <td style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--color-text-muted)', verticalAlign: 'middle' }}>
+                    {idx + 1}
+                  </td>
+                  {/* Day */}
+                  <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                    <select
+                      className="input"
+                      style={{ padding: '8px 10px', fontSize: '0.85rem', fontWeight: 500 }}
+                      value={row.day}
+                      onChange={e => updateOtherRow(row.id, 'day', e.target.value)}
+                    >
+                      <option value="Monday">Monday</option>
+                      <option value="Tuesday">Tuesday</option>
+                      <option value="Wednesday">Wednesday</option>
+                      <option value="Thursday">Thursday</option>
+                      <option value="Friday">Friday</option>
+                      <option value="Saturday">Saturday</option>
+                    </select>
+                  </td>
+                  {/* From Time */}
+                  <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                    <input
+                      type="time"
+                      className="input"
+                      style={{ padding: '7px 10px', fontSize: '0.85rem' }}
+                      value={row.from_time ? row.from_time.slice(0, 5) : ''}
+                      onChange={e => updateOtherRow(row.id, 'from_time', e.target.value)}
+                    />
+                  </td>
+                  {/* To Time */}
+                  <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                    <input
+                      type="time"
+                      className="input"
+                      style={{ padding: '7px 10px', fontSize: '0.85rem' }}
+                      value={row.to_time ? row.to_time.slice(0, 5) : ''}
+                      onChange={e => updateOtherRow(row.id, 'to_time', e.target.value)}
+                    />
+                  </td>
+                  {/* Duty Name */}
+                  <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="e.g. Exam Duty, Meeting, Seminar"
+                      style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                      value={row.duty_name || ''}
+                      onChange={e => updateOtherRow(row.id, 'duty_name', e.target.value)}
+                    />
+                  </td>
+                  {/* Action */}
+                  <td style={{ padding: '10px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
+                    <button
+                      type="button"
+                      className="btn-icon"
+                      onClick={() => removeOtherRow(row.id)}
+                      style={{
+                        background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger)',
+                        border: '1px solid rgba(239,68,68,0.2)', padding: 7, cursor: 'pointer'
+                      }}
+                      title="Remove row"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {otherWorks.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-muted)', fontSize: '0.88rem' }}>
+                    No weekly other works configured yet. Click "Add Other Work Row" to configure.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={addOtherRow}
+            style={{
+              width: '100%', justifyContent: 'center', marginTop: 16,
+              border: '2px dashed var(--color-border-dark)', background: 'var(--color-surface-2)',
+              color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6
+            }}
+          >
+            <Plus size={14} /> Add Other Work Row
+          </button>
+        </div>
       </div>
 
       {/* Action Footer */}

@@ -10,6 +10,7 @@ const REPORT_TYPES = [
   { key: 'attendance',  label: 'Attendance Report',  endpoint: '/api/reports/attendance' },
   { key: 'leave',       label: 'Leave Report',       endpoint: '/api/reports/leave' },
   { key: 'conflicts',   label: 'Conflict Report',    endpoint: '/api/reports/conflicts' },
+  { key: 'unassigned',  label: 'Unassigned Classes', endpoint: '/api/reports/unassigned' },
 ];
 
 export default function ReportsPage() {
@@ -130,7 +131,7 @@ export default function ReportsPage() {
           {/* Filters */}
           <div className="card" style={{ marginBottom: 20, padding: 20 }}>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              {reportType !== 'conflicts' && (
+              {reportType !== 'conflicts' && reportType !== 'unassigned' && (
                 <>
                   <div style={{ flex: 1, minWidth: 140 }}>
                     <label className="form-label" htmlFor="report-from">From Date</label>

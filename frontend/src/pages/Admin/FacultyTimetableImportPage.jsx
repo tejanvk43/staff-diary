@@ -383,7 +383,7 @@ export default function FacultyTimetableImportPage() {
                                 displayBranch = parts[0];
                                 displayCode = parts.slice(1).join('_');
                               }
-                              const mainTitle = displayBranch ? `${displayCode} (${displayBranch})` : displayCode;
+                              const mainTitle = displayCode;
 
                               const ROMAN_YEARS = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
                               const yrLabel = `${ROMAN_YEARS[s.year] || s.year} Year`;
@@ -391,7 +391,7 @@ export default function FacultyTimetableImportPage() {
                               const isEvenSemester = currentMonth >= 0 && currentMonth <= 5;
                               const semNumber = isEvenSemester ? (s.year * 2) : (s.year * 2 - 1);
                               const semLabel = semNumber % 2 === 0 ? 'II Semester' : 'I Semester';
-                              const secLabel = s.section ? `, Sec-${s.section.split('-').pop()}` : '';
+                              const secLabel = s.section ? `, ${s.section}` : '';
 
                               const formattedTimings = `${formatTime12h(s.from_time)} - ${formatTime12h(s.to_time)}`;
                               const blockName = s.room_number || '';

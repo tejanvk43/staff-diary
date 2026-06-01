@@ -154,11 +154,17 @@ function SectionGrid({ slots, timetable }) {
                           display: 'flex', flexDirection: 'column', gap: 1,
                         }}>
                           <div style={{ fontWeight: 700, color, lineHeight: 1.2 }}>
-                            {s.short_name || s.subject_name || '—'}
+                            {(() => {
+                              let disp = s.short_name || s.subject_name || '—';
+                              if (disp.includes('_')) {
+                                disp = disp.split('_').slice(1).join('_');
+                              }
+                              return disp;
+                            })()}
                           </div>
-                          {s.faculty_name && (
+                          {(s.faculty_short_name || s.faculty_name) && (
                             <div style={{ fontSize: '0.6rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 3, marginTop: 1 }}>
-                              <User size={8} /> {s.faculty_name.split(' ').slice(-1)[0]}
+                              <User size={8} /> {s.faculty_short_name || s.faculty_name.split(' ').slice(-1)[0]}
                             </div>
                           )}
                           {s.subject_type === 'Lab' && (

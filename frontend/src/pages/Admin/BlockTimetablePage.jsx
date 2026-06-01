@@ -1,88 +1,22 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, Edit2, X, Loader2, CalendarDays, ChevronRight, BookOpen, Upload, Download } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Loader2, CalendarDays, ChevronRight, BookOpen } from 'lucide-react';
 import api from '../../api/axios';
 import AppLayout from '../../components/AppLayout';
-import * as XLSX from 'xlsx';
 
 const CARD_COLORS = ['#6366f1','#06b6d4','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899'];
 
-// ─── Create / Rename Modal — Programme, Year, Section, Branch, Name ───────────────────────────────────
-function BlockNameModal({ existing, onClose, onSave, programs, sections }) {
-  const [educationType, setEducationType] = useState(existing?.education_type || programs[0]?.name || 'B-Tech');
-  
-  // Find selected program structure
-  const selectedProg = programs.find(p => p.name === educationType) || programs[0];
-  const availableYears = selectedProg?.years || [];
-  const availableBranches = selectedProg?.branches || [];
-
-  const [year, setYear] = useState(existing?.year || availableYears[0]?.year_number || 1);
-  const [section, setSection] = useState(existing?.section || '');
-  const [department, setDepartment] = useState(existing?.department || availableBranches[0]?.branch_name || 'General');
-  const [name, setName] = useState(existing?.name || '');
+// ─── Simple name-only modal ───────────────────────────────────────────────────
+function BlockNameModal({ existing, onClose, onSave }) {
+  const [name, setName]     = useState(existing?.name || '');
   const [saving, setSaving] = useState(false);
-
-  // Filter sections by program and year
-  const availableSections = sections.filter(s => 
-    s.education_type === educationType && 
-    Number(s.year) === Number(year)
-  );
-
-  // Automatically update year/branch options when programme type changes
-  const handleEduTypeChange = (val) => {
-    setEducationType(val);
-    const prog = programs.find(p => p.name === val);
-    const years = prog?.years || [];
-    const branches = prog?.branches || [];
-    
-    const defaultYear = years[0]?.year_number || 1;
-    setYear(defaultYear);
-    setDepartment(branches[0]?.branch_name || 'General');
-    
-    // Auto-suggest name
-    const defaultSection = sections.find(s => s.education_type === val && Number(s.year) === Number(defaultYear))?.section_name || '';
-    setSection(defaultSection);
-    suggestName(val, defaultYear, defaultSection);
-  };
-
-  const handleYearChange = (val) => {
-    const yrNum = parseInt(val);
-    setYear(yrNum);
-    const defaultSection = sections.find(s => s.education_type === educationType && Number(s.year) === yrNum)?.section_name || '';
-    setSection(defaultSection);
-    suggestName(educationType, yrNum, defaultSection);
-  };
-
-  const handleSectionChange = (val) => {
-    setSection(val);
-    suggestName(educationType, year, val);
-  };
-
-  const suggestName = (edu, yr, sec) => {
-    const yrLabel = programs.find(p => p.name === edu)?.years?.find(y => y.year_number === yr)?.year_name || `Yr ${yr}`;
-    const secSuffix = sec ? ` - ${sec}` : '';
-    setName(`${edu} (${yrLabel})${secSuffix}`);
-  };
-
-  // Run initial name suggestion for new block if empty
-  useEffect(() => {
-    if (!existing && !name) {
-      suggestName(educationType, year, section);
-    }
-  }, [programs, sections]);
 
   const handleSave = async () => {
     if (!name.trim()) { toast.error('Block name is required.'); return; }
     setSaving(true);
     try {
-      await onSave({
-        name: name.trim(),
-        education_type: educationType,
-        year: parseInt(year),
-        section: section || null,
-        department: department || 'General'
-      });
+      await onSave({ name: name.trim() });
       onClose();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save.');
@@ -91,19 +25,19 @@ function BlockNameModal({ existing, onClose, onSave, programs, sections }) {
     }
   };
 
-  const handleKey = (e) => { if (e.key === 'Enter') handleSave(); };
-
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 460 }}>
+      <div className="modal-box" style={{ maxWidth: 400 }}>
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
           <div>
             <h3 style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: 2 }}>
-              {existing ? 'Edit Block Timetable' : 'Create Timetable Block'}
+              {existing ? 'Rename Block' : 'New Timetable Block'}
             </h3>
             <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-              Configure programme, year, and section for this block
+              {existing
+                ? 'Update the block name.'
+                : "Give this block a name — you'll add periods inside the editor."}
             </p>
           </div>
           <button
@@ -115,52 +49,19 @@ function BlockNameModal({ existing, onClose, onSave, programs, sections }) {
           </button>
         </div>
 
-        {/* Dropdowns */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 24 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div className="form-group">
-              <label className="form-label">Programme *</label>
-              <select className="input" value={educationType} onChange={e => handleEduTypeChange(e.target.value)}>
-                {programs.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Year *</label>
-              <select className="input" value={year} onChange={e => handleYearChange(e.target.value)}>
-                {availableYears.map(y => <option key={y.year_number} value={y.year_number}>{y.year_name}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div className="form-group">
-              <label className="form-label">Section</label>
-              <select className="input" value={section} onChange={e => handleSectionChange(e.target.value)}>
-                <option value="">— Select Section —</option>
-                {availableSections.map(s => <option key={s.id} value={s.section_name}>{s.section_name}</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Branch / Department</label>
-              <select className="input" value={department} onChange={e => setDepartment(e.target.value)}>
-                <option value="General">General</option>
-                {availableBranches.map(b => <option key={b.id} value={b.branch_name}>{b.branch_name}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label" htmlFor="bt-name">Block Name</label>
-            <input
-              id="bt-name"
-              className="input"
-              value={name}
-              placeholder="e.g. CSE-A 2nd Year, ECE Block B…"
-              onChange={e => setName(e.target.value)}
-              onKeyDown={handleKey}
-              style={{ fontSize: '1rem', padding: '10px 12px' }}
-            />
-          </div>
+        {/* Name field */}
+        <div className="form-group" style={{ marginBottom: 22 }}>
+          <label className="form-label" htmlFor="bt-name">Block Name *</label>
+          <input
+            id="bt-name"
+            className="input"
+            autoFocus
+            value={name}
+            placeholder="e.g. CSE-A Block, ECE Morning Block…"
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSave()}
+            style={{ fontSize: '1rem', padding: '10px 12px' }}
+          />
         </div>
 
         {/* Actions */}
@@ -176,7 +77,7 @@ function BlockNameModal({ existing, onClose, onSave, programs, sections }) {
             disabled={saving || !name.trim()}
           >
             {saving ? <Loader2 size={14} className="spinner" /> : <CalendarDays size={14} />}
-            {existing ? 'Save Details' : 'Create Timetable'}
+            {existing ? 'Save Name' : 'Create Timetable'}
           </button>
         </div>
       </div>
@@ -188,8 +89,6 @@ function BlockNameModal({ existing, onClose, onSave, programs, sections }) {
 export default function BlockTimetablePage() {
   const navigate = useNavigate();
   const [timetables, setTimetables] = useState([]);
-  const [programs, setPrograms]     = useState([]);
-  const [sections, setSections]     = useState([]);
   const [loading, setLoading]       = useState(true);
   const [showModal, setShowModal]   = useState(false);
   const [editItem, setEditItem]     = useState(null);
@@ -197,14 +96,8 @@ export default function BlockTimetablePage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [btRes, progRes, secRes] = await Promise.all([
-        api.get('/api/admin/block-timetables?source=manual'),
-        api.get('/api/admin/programs/details'),
-        api.get('/api/admin/sections'),
-      ]);
-      setTimetables(btRes.data.data || []);
-      setPrograms(progRes.data.data || []);
-      setSections(secRes.data.data || []);
+      const res = await api.get('/api/admin/block-timetables?source=manual');
+      setTimetables(res.data.data || []);
     } catch (_) {
       toast.error('Failed to load timetables.');
     } finally {
@@ -214,17 +107,17 @@ export default function BlockTimetablePage() {
 
   useEffect(() => { load(); }, []);
 
-  // Create: save then immediately open the editor
+  // Create → immediately open editor
   const handleCreate = async (data) => {
     const res = await api.post('/api/admin/block-timetables', data);
-    toast.success('Timetable created! Add your slots now.');
+    toast.success('Timetable created! Add your periods now.');
     navigate(`/admin/block-timetables/${res.data.id}`);
   };
 
-  // Rename/update existing
+  // Rename existing
   const handleRename = async (data) => {
     await api.put(`/api/admin/block-timetables/${editItem.id}`, data);
-    toast.success('Block timetable updated.');
+    toast.success('Block timetable renamed.');
     load();
   };
 
@@ -239,8 +132,6 @@ export default function BlockTimetablePage() {
     }
   };
 
-
-
   return (
     <AppLayout title="Block Timetables">
 
@@ -251,21 +142,20 @@ export default function BlockTimetablePage() {
           <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
             Timing templates that define period slots &amp; break times for each class block
           </p>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: '0.72rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 6, padding: '3px 10px', color: 'var(--color-primary)', cursor: 'pointer' }}
-            onClick={() => navigate('/admin/section-timetables')}>
+          <div
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: '0.72rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 6, padding: '3px 10px', color: 'var(--color-primary)', cursor: 'pointer' }}
+            onClick={() => navigate('/admin/section-timetables')}
+          >
             <CalendarDays size={11} /> View Section-wise Timetables →
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button
-            id="create-bt-btn"
-            className="btn btn-primary"
-            onClick={() => { setEditItem(null); setShowModal(true); }}
-            disabled={loading || programs.length === 0}
-          >
-            <Plus size={14} /> New Timetable
-          </button>
-        </div>
+        <button
+          id="create-bt-btn"
+          className="btn btn-primary"
+          onClick={() => { setEditItem(null); setShowModal(true); }}
+        >
+          <Plus size={14} /> New Timetable
+        </button>
       </div>
 
       {/* Content */}
@@ -279,28 +169,18 @@ export default function BlockTimetablePage() {
           <CalendarDays size={56} style={{ opacity: 0.18, marginBottom: 14 }} />
           <h3 style={{ fontWeight: 600, marginBottom: 8 }}>No timetables yet</h3>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem', marginBottom: 24, maxWidth: 320, textAlign: 'center' }}>
-            Create a timetable block for each class or section and fill in the periods.
+            Create a block, give it a name, then open the editor to add periods.
           </p>
-          <button
-            className="btn btn-primary"
-            onClick={() => { setEditItem(null); setShowModal(true); }}
-            disabled={programs.length === 0}
-          >
+          <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }}>
             <Plus size={14} /> Create First Block
           </button>
         </div>
 
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
 
-          {/* Existing blocks */}
           {timetables.map((t, idx) => {
             const color = CARD_COLORS[idx % CARD_COLORS.length];
-            
-            // Look up year custom name
-            const prog = programs.find(p => p.name === t.education_type);
-            const yrLabel = prog?.years?.find(y => Number(y.year_number) === Number(t.year))?.year_name || `Year ${t.year}`;
-
             return (
               <div
                 key={t.id}
@@ -315,21 +195,11 @@ export default function BlockTimetablePage() {
 
                 <div style={{ padding: '18px 20px' }}>
                   {/* Block name */}
-                  <div style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 10, lineHeight: 1.3 }}>
+                  <div style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 14, lineHeight: 1.3 }}>
                     {t.name}
                   </div>
 
-                  {/* Metadata tags */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: `${color}15`, color }}>
-                      {t.education_type}
-                    </span>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'var(--color-surface-2)', color: 'var(--color-text-muted)' }}>
-                      {yrLabel} {t.section ? `· ${t.section}` : ''}
-                    </span>
-                  </div>
-
-                  {/* Period count pill */}
+                  {/* Period count */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 18 }}>
                     <BookOpen size={13} style={{ color }} />
                     <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
@@ -337,9 +207,8 @@ export default function BlockTimetablePage() {
                     </span>
                   </div>
 
-                  {/* Action buttons */}
+                  {/* Actions */}
                   <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>
-                    {/* Open editor */}
                     <button
                       id={`open-bt-${t.id}`}
                       className="btn btn-sm"
@@ -353,10 +222,9 @@ export default function BlockTimetablePage() {
                       Open Editor <ChevronRight size={13} />
                     </button>
 
-                    {/* Edit info */}
                     <button
                       id={`rename-bt-${t.id}`}
-                      title="Edit timetable info"
+                      title="Rename"
                       className="btn btn-sm btn-secondary"
                       style={{ padding: '7px 10px' }}
                       onClick={() => { setEditItem(t); setShowModal(true); }}
@@ -364,7 +232,6 @@ export default function BlockTimetablePage() {
                       <Edit2 size={13} />
                     </button>
 
-                    {/* Delete */}
                     <button
                       id={`delete-bt-${t.id}`}
                       title="Delete"
@@ -380,11 +247,11 @@ export default function BlockTimetablePage() {
             );
           })}
 
-          {/* "+ Add" card */}
+          {/* "+ New" card */}
           <div
             onClick={() => { setEditItem(null); setShowModal(true); }}
             style={{
-              border: '2px dashed var(--color-border)', borderRadius: 12, minHeight: 172,
+              border: '2px dashed var(--color-border)', borderRadius: 12, minHeight: 160,
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', color: 'var(--color-text-muted)', gap: 8,
               transition: 'border-color 0.15s, color 0.15s',
@@ -401,8 +268,6 @@ export default function BlockTimetablePage() {
       {showModal && (
         <BlockNameModal
           existing={editItem}
-          programs={programs}
-          sections={sections}
           onClose={() => { setShowModal(false); setEditItem(null); }}
           onSave={editItem ? handleRename : handleCreate}
         />

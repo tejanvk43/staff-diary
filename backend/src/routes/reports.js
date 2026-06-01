@@ -9,5 +9,6 @@ router.get('/diary',       ctrl.diaryReport);
 router.get('/attendance',  ctrl.attendanceReport);
 router.get('/leave',       ctrl.leaveReport);
 router.get('/conflicts',   ctrl.conflictReport);
+router.get('/unassigned',  ctrl.unassignedReport);
 
 module.exports = router;

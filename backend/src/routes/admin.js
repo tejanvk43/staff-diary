@@ -30,10 +30,15 @@ router.put('/departments/:id',    role('Admin'), ctrl.updateDepartment);
 router.delete('/departments/:id', role('Admin'), ctrl.deleteDepartment);
 
 // Subjects
-router.get('/subjects',           ctrl.getSubjects);
-router.post('/subjects',          role('Admin'), ctrl.createSubject);
-router.put('/subjects/:id',       role('Admin'), ctrl.updateSubject);
-router.delete('/subjects/:id',    role('Admin'), ctrl.deleteSubject);
+router.get('/subjects',              ctrl.getSubjects);
+router.post('/subjects',             role('Admin'), ctrl.createSubject);
+router.post('/subjects/bulk',        role('Admin'), upload.single('file'), ctrl.bulkUploadSubjects);
+router.delete('/subjects/reset',     role('Admin'), ctrl.resetSubjects);
+router.put('/subjects/:id',          role('Admin'), ctrl.updateSubject);
+router.delete('/subjects/:id',       role('Admin'), ctrl.deleteSubject);
+
+// Faculty list (for timetable pickers)
+router.get('/faculty',               ctrl.getFacultyList);
 
 // Sections
 router.get('/sections',           ctrl.getSections);

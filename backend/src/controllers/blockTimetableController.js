@@ -86,19 +86,42 @@ async function getSlots(req, res) {
     if (!timetable.length) return res.status(404).json({ success: false, message: 'Timetable not found.' });
 
     const [slots] = await pool.query(
-      'SELECT * FROM block_timetable_slots WHERE timetable_id = ? ORDER BY FIELD(day,"Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"), from_time',
+      `SELECT bts.*,
+              s.subject_name AS db_subject_name, s.short_name AS db_short_name,
+              s.subject_type AS db_subject_type,
+              u.short_name AS faculty_short_name
+         FROM block_timetable_slots bts
+         LEFT JOIN subjects s ON bts.subject_id = s.id
+         LEFT JOIN users u ON bts.faculty_id = u.employee_id
+        WHERE bts.timetable_id = ?
+        ORDER BY FIELD(bts.day,'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), bts.from_time`,
       [req.params.id]
     );
-    return res.json({ success: true, data: { timetable: timetable[0], slots } });
+
+    // Normalise: prefer DB values for subject fields; parse faculty_list
+    const enriched = slots.map(s => ({
+      ...s,
+      subject_name: s.db_subject_name || s.subject_name,
+      short_name:   s.db_short_name   || s.short_name,
+      subject_type: s.db_subject_type  || s.subject_type,
+      faculty_short_name: s.faculty_short_name || null,
+      faculty_list: s.faculty_list
+        ? (typeof s.faculty_list === 'string' ? JSON.parse(s.faculty_list) : s.faculty_list)
+        : [],
+    }));
+
+    return res.json({ success: true, data: { timetable: timetable[0], slots: enriched } });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error.' });
   }
 }
 
+
 // ─── POST /api/admin/block-timetables/:id/slots ───────────────────────────────
 async function addSlot(req, res) {
-  const { day, from_time, to_time, subject_id, subject_name, short_name, subject_type, room_number, faculty_id, faculty_name, notes } = req.body;
+  const { day, from_time, to_time, subject_id, subject_type: manualType,
+          short_name: manualShort, faculty_list, room_number, notes } = req.body;
 
   if (!day || !from_time || !to_time) {
     return res.status(400).json({ success: false, message: 'day, from_time, and to_time are required.' });
@@ -108,14 +131,47 @@ async function addSlot(req, res) {
   }
 
   try {
+    // ── Resolve subject from DB ──────────────────────────────────────────
+    let subjectRow = null;
+    if (subject_id) {
+      const [rows] = await pool.query(
+        'SELECT s.*, st.max_count FROM subjects s LEFT JOIN subject_types st ON st.name = s.subject_type WHERE s.id = ?',
+        [subject_id]
+      );
+      if (!rows.length) return res.status(400).json({ success: false, message: 'Subject not found.' });
+      subjectRow = rows[0];
+    }
+
+    const resolvedType   = subjectRow?.subject_type || manualType || 'Theory';
+    const resolvedShort  = subjectRow?.short_name   || manualShort || null;
+    const resolvedName   = subjectRow?.subject_name || null;
+    const maxCount       = subjectRow?.max_count ?? 1;
+
+    // ── Validate faculty list against max_count ──────────────────────────
+    const facultyArr = Array.isArray(faculty_list) ? faculty_list : [];
+    if (subject_id && facultyArr.length > maxCount) {
+      return res.status(400).json({
+        success: false,
+        message: `Max ${maxCount} faculty allowed for ${resolvedType} subjects. You provided ${facultyArr.length}.`
+      });
+    }
+
+    // Backward-compat single fields
+    const firstFaculty = facultyArr[0] || null;
+
     const [result] = await pool.query(
       `INSERT INTO block_timetable_slots
-         (timetable_id, day, from_time, to_time, subject_id, subject_name, short_name, subject_type, room_number, faculty_id, faculty_name, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [req.params.id, day, from_time, to_time,
-       subject_id || null, subject_name || null, short_name || null,
-       subject_type || 'Theory', room_number || null,
-       faculty_id || null, faculty_name || null, notes || null]
+         (timetable_id, day, from_time, to_time, subject_id, subject_name, short_name,
+          subject_type, room_number, faculty_id, faculty_name, faculty_list, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.params.id, day, from_time, to_time,
+        subject_id || null, resolvedName, resolvedShort,
+        resolvedType, room_number || null,
+        firstFaculty?.id || null, firstFaculty?.name || null,
+        facultyArr.length ? JSON.stringify(facultyArr) : null,
+        notes || null,
+      ]
     );
     return res.status(201).json({ success: true, id: result.insertId, message: 'Slot added.' });
   } catch (err) {
@@ -126,55 +182,80 @@ async function addSlot(req, res) {
 
 // ─── PUT /api/admin/block-timetables/:id/slots/:slotId ───────────────────────
 async function updateSlot(req, res) {
-  const { day, from_time, to_time, subject_id, subject_name, short_name, subject_type, room_number, faculty_id, faculty_name, notes } = req.body;
+  const { day, from_time, to_time, subject_id, subject_type: manualType,
+          short_name: manualShort, faculty_list, room_number, notes } = req.body;
   try {
-    const [slots] = await pool.query(
-      'SELECT day, from_time, subject_type, short_name FROM block_timetable_slots WHERE id = ? AND timetable_id = ?',
+    const [existing] = await pool.query(
+      'SELECT * FROM block_timetable_slots WHERE id = ? AND timetable_id = ?',
       [req.params.slotId, req.params.id]
     );
-    if (!slots.length) return res.status(404).json({ success: false, message: 'Slot not found.' });
+    if (!existing.length) return res.status(404).json({ success: false, message: 'Slot not found.' });
+    const slot = existing[0];
 
-    const slot = slots[0];
-    const checkSubjectType = subject_type !== undefined ? subject_type : slot.subject_type;
-    const checkShortName = short_name !== undefined ? short_name : slot.short_name;
-    const checkDay = day !== undefined ? day : slot.day;
-    const checkFromTime = from_time !== undefined ? from_time : slot.from_time;
+    // ── Resolve subject ──────────────────────────────────────────────────
+    let subjectRow = null;
+    const resolvedSubjectId = subject_id !== undefined ? subject_id : slot.subject_id;
+    if (resolvedSubjectId) {
+      const [rows] = await pool.query(
+        'SELECT s.*, st.max_count FROM subjects s LEFT JOIN subject_types st ON st.name = s.subject_type WHERE s.id = ?',
+        [resolvedSubjectId]
+      );
+      if (rows.length) subjectRow = rows[0];
+    }
 
-    const isBreak = checkSubjectType === 'Break' || 
-                    (checkShortName && (
-                      checkShortName.toLowerCase().includes('break') ||
-                      checkShortName.toLowerCase().includes('lunch') ||
-                      checkShortName.toLowerCase().includes('recess') ||
-                      checkShortName.toLowerCase().includes('interval') ||
-                      checkShortName.toLowerCase().includes('tea')
-                    ));
+    const resolvedType  = subjectRow?.subject_type || manualType || slot.subject_type;
+    const resolvedShort = subjectRow?.short_name || (manualShort !== undefined ? manualShort : slot.short_name);
+    const resolvedName  = subjectRow?.subject_name || slot.subject_name;
+    const maxCount      = subjectRow?.max_count ?? 1;
+
+    // ── Validate faculty list ─────────────────────────────────────────────
+    let facultyArr;
+    if (faculty_list !== undefined) {
+      facultyArr = Array.isArray(faculty_list) ? faculty_list : [];
+    } else {
+      // Keep existing
+      const stored = slot.faculty_list;
+      facultyArr = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : [];
+    }
+
+    if (resolvedSubjectId && facultyArr.length > maxCount) {
+      return res.status(400).json({
+        success: false,
+        message: `Max ${maxCount} faculty allowed for ${resolvedType} subjects.`
+      });
+    }
+
+    const isBreak = resolvedType === 'Break' ||
+      (resolvedShort && ['break','lunch','recess','interval','tea'].some(k => String(resolvedShort).toLowerCase().includes(k)));
+
+    const firstFaculty = facultyArr[0] || null;
+    const checkDay       = day       !== undefined ? day       : slot.day;
+    const checkFromTime  = from_time !== undefined ? from_time : slot.from_time;
 
     const [result] = await pool.query(
       `UPDATE block_timetable_slots
        SET day=COALESCE(?,day), from_time=COALESCE(?,from_time), to_time=COALESCE(?,to_time),
-           subject_id=?, subject_name=?, short_name=?, subject_type=COALESCE(?,subject_type),
-           room_number=?, faculty_id=?, faculty_name=?, notes=?
+           subject_id=?, subject_name=?, short_name=?, subject_type=?,
+           room_number=?, faculty_id=?, faculty_name=?, faculty_list=?, notes=?
        WHERE id=? AND timetable_id=?`,
-      [day || null, from_time || null, to_time || null,
-       subject_id ?? null, subject_name ?? null, short_name ?? null,
-       subject_type || null, room_number ?? null,
-       faculty_id ?? null, faculty_name ?? null, notes ?? null,
-       req.params.slotId, req.params.id]
+      [
+        day || null, from_time || null, to_time || null,
+        resolvedSubjectId || null, resolvedName, resolvedShort, resolvedType,
+        room_number ?? slot.room_number,
+        firstFaculty?.id || null, firstFaculty?.name || null,
+        facultyArr.length ? JSON.stringify(facultyArr) : null,
+        notes ?? slot.notes,
+        req.params.slotId, req.params.id,
+      ]
     );
-
     if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Slot not found.' });
 
     if (isBreak) {
-      // Delete any mapped faculty slots for this block, day, and time
       await pool.query(
-        `DELETE FROM timetables 
-         WHERE block_id = ? 
-           AND day = ? 
-           AND TIME_TO_SEC(from_time) = TIME_TO_SEC(?)`,
+        `DELETE FROM timetables WHERE block_id=? AND day=? AND TIME_TO_SEC(from_time)=TIME_TO_SEC(?)`,
         [req.params.id, checkDay, checkFromTime]
       );
     }
-
     return res.json({ success: true, message: 'Slot updated.' });
   } catch (err) {
     console.error(err);

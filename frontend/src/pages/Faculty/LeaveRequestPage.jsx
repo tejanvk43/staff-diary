@@ -72,19 +72,20 @@ function LeaveForm() {
         </div>
       </div>
 
-      {/* Reason — optional */}
+      {/* Reason — required */}
       <div className="form-group">
         <label className="form-label" htmlFor="leave-reason">
-          Reason <span style={{ color: 'var(--color-text-muted)', fontWeight: 400, fontSize: '0.75rem' }}>(optional)</span>
+          Reason *
         </label>
         <textarea
           id="leave-reason"
-          className="input"
+          className={`input ${errors.reason ? 'input-error' : ''}`}
           rows={3}
           placeholder="Briefly describe the reason for your leave…"
-          {...register('reason')}
+          {...register('reason', { required: 'Reason is required', minLength: { value: 5, message: 'Please provide at least 5 characters' } })}
           style={{ resize: 'vertical' }}
         />
+        {errors.reason && <p style={{ color: 'var(--color-danger)', fontSize: '0.72rem', marginTop: 4 }}>{errors.reason.message}</p>}
       </div>
 
       <button

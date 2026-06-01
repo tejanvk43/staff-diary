@@ -801,6 +801,9 @@ function TimetableDiaryTable({ periods, entries, otherEntries = [], onSave, isLo
 
   const buildDesc = (period, idx) => {
     const note = (notes[idx] ?? '').trim();
+    if (period.isOtherWork) {
+      return note ? `${period.short_name} - ${note}` : period.short_name;
+    }
     const subjectStr = period.subject_name
       ? `${period.subject_name} (${period.subject_code})`
       : (period.short_name || period.subject_code || 'Teaching');
@@ -837,10 +840,23 @@ function TimetableDiaryTable({ periods, entries, otherEntries = [], onSave, isLo
       try {
         if (task.kind === 'period') {
           const { period, idx, existing } = task;
+          let activityType = 'Teaching';
+          if (period.isOtherWork) {
+            const clean = String(period.short_name).toLowerCase();
+            if (clean.includes('teach')) activityType = 'Teaching';
+            else if (clean.includes('meet')) activityType = 'Meeting';
+            else if (clean.includes('research')) activityType = 'Research';
+            else if (clean.includes('admin')) activityType = 'Administration';
+            else if (clean.includes('exam')) activityType = 'Exam Duty';
+            else if (clean.includes('lab')) activityType = 'Lab Work';
+            else activityType = 'Other';
+          } else {
+            activityType = period.subject_type === 'Lab' ? 'Lab Work' : 'Teaching';
+          }
           const payload = {
             from_time:     `${viewDate}T${period.from_time.slice(0, 5)}:00`,
             to_time:       `${viewDate}T${period.to_time.slice(0, 5)}:00`,
-            activity_type: period.subject_type === 'Lab' ? 'Lab Work' : 'Teaching',
+            activity_type: activityType,
             description:   buildDesc(period, idx),
           };
           if (existing?.id) await api.put(`/api/diary/${existing.id}`, payload);
@@ -1008,6 +1024,9 @@ function TimetableDiaryTable({ periods, entries, otherEntries = [], onSave, isLo
                         </div>
                         {period.subject_type === 'Lab' && (
                           <span style={{ fontSize: '0.6rem', background: 'rgba(16,185,129,0.12)', color: '#10b981', borderRadius: 4, padding: '1px 5px', display: 'inline-block', marginTop: 4 }}>Lab</span>
+                        )}
+                        {period.isOtherWork && (
+                          <span style={{ fontSize: '0.6rem', background: 'rgba(245,158,11,0.12)', color: '#d97706', borderRadius: 4, padding: '1px 5px', display: 'inline-block', marginTop: 4 }}>Other Work</span>
                         )}
                       </td>
                       <td style={{ ...TD, padding: '8px 12px', borderRight: 'none' }}>
@@ -1357,6 +1376,7 @@ export default function FacultyDashboard() {
   const [submitting, setSubmitting]   = useState(false);
   const [config, setConfig]           = useState({ diary_start_time: '08:30', diary_end_time: '16:10' });
   const [myTimetable, setMyTimetable] = useState([]);
+  const [myOtherWorks, setMyOtherWorks] = useState([]);
   const [hasTimetable, setHasTimetable] = useState(null); // null = loading
 
   const [dateEditStatus, setDateEditStatus] = useState(null);
@@ -1408,6 +1428,14 @@ export default function FacultyDashboard() {
     }
   }, []);
 
+  const checkOtherWorks = useCallback(async () => {
+    try {
+      const res = await api.get('/api/faculty/setup');
+      const data = res.data.data.otherWorks || [];
+      setMyOtherWorks(data);
+    } catch (_) {}
+  }, []);
+
   const loadEntries = useCallback(async (date) => {
     setLoading(true);
     try {
@@ -1435,7 +1463,7 @@ export default function FacultyDashboard() {
     }
   }, [todayLocal]);
 
-  useEffect(() => { loadConfig(); checkTimetable(); }, [loadConfig, checkTimetable]);
+  useEffect(() => { loadConfig(); checkTimetable(); checkOtherWorks(); }, [loadConfig, checkTimetable, checkOtherWorks]);
   useEffect(() => { loadEntries(viewDate); }, [viewDate, loadEntries]);
 
   const handleSaveEntry = async (data) => {
@@ -1753,7 +1781,20 @@ export default function FacultyDashboard() {
               {/* ── Timetable Diary Table ── */}
               {isTodayView && (() => {
                 const dayOfWeek = getDayOfWeek(viewDate);
-                const todayPeriods = myTimetable.filter(p => p.day === dayOfWeek);
+                const todayRegularPeriods = myTimetable.filter(p => p.day === dayOfWeek);
+                const todayOtherWorks = myOtherWorks.filter(ow => ow.day === dayOfWeek).map(ow => ({
+                  day: ow.day,
+                  from_time: ow.from_time,
+                  to_time: ow.to_time,
+                  subject_type: 'Other Work',
+                  short_name: ow.duty_name,
+                  subject_name: 'Other Work',
+                  subject_code: 'OTHER',
+                  isOtherWork: true
+                }));
+                const todayPeriods = [...todayRegularPeriods, ...todayOtherWorks].sort((a, b) =>
+                  a.from_time.localeCompare(b.from_time)
+                );
                 return todayPeriods.length > 0 ? (
                   <>
                     {/* ── Other Works button — top of section ── */}
