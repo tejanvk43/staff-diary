@@ -138,14 +138,14 @@ function App() {
             </ProtectedRoute>
           } />
 
-          {/* Admin-only routes */}
+          {/* Admin + HOD routes */}
           <Route path="/admin/users" element={
-            <ProtectedRoute roles={['Admin']}>
+            <ProtectedRoute roles={['Admin','HOD']}>
               <UserManagementPage />
             </ProtectedRoute>
           } />
           <Route path="/admin/users/:employee_id" element={
-            <ProtectedRoute roles={['Admin']}>
+            <ProtectedRoute roles={['Admin','HOD']}>
               <AdminUserDetailPage />
             </ProtectedRoute>
           } />
@@ -180,12 +180,12 @@ function App() {
             </ProtectedRoute>
           } />
           <Route path="/admin/block-timetables" element={
-            <ProtectedRoute roles={['Admin','HOD']}>
+            <ProtectedRoute roles={['Admin']}>
               <BlockTimetablePage />
             </ProtectedRoute>
           } />
           <Route path="/admin/block-timetables/:id" element={
-            <ProtectedRoute roles={['Admin','HOD']}>
+            <ProtectedRoute roles={['Admin']}>
               <BlockTimetableEditorPage />
             </ProtectedRoute>
           } />
@@ -195,7 +195,7 @@ function App() {
             </ProtectedRoute>
           } />
           <Route path="/admin/section-timetables" element={
-            <ProtectedRoute roles={['Admin','HOD']}>
+            <ProtectedRoute roles={['Admin']}>
               <SectionTimetablePage />
             </ProtectedRoute>
           } />

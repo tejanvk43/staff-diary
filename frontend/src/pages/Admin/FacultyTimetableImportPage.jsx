@@ -75,6 +75,12 @@ export default function FacultyTimetableImportPage() {
     loadInitialData();
   }, []);
 
+  useEffect(() => {
+    if (user?.role === 'HOD' && user?.department) {
+      setSelectedDept(user.department);
+    }
+  }, [user]);
+
   const loadFacultyTimetable = async (employeeId) => {
     setLoadingTimetable(true);
     try {
@@ -413,11 +419,18 @@ export default function FacultyTimetableImportPage() {
               className="input"
               value={selectedDept}
               onChange={e => { setSelectedDept(e.target.value); handleFacultyChange(''); }}
+              disabled={user?.role === 'HOD'}
             >
-              <option value="">All Departments</option>
-              {departments.map(d => (
-                <option key={d.id} value={d.department_name}>{d.department_code}</option>
-              ))}
+              {user?.role === 'HOD' ? (
+                <option value={user.department}>{user.department}</option>
+              ) : (
+                <>
+                  <option value="">All Departments</option>
+                  {departments.map(d => (
+                    <option key={d.id} value={d.department_name}>{d.department_code}</option>
+                  ))}
+                </>
+              )}
             </select>
           </div>
           <div>

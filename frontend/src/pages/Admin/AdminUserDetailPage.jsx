@@ -116,6 +116,11 @@ export default function AdminUserDetailPage() {
         ]);
 
         const { user: userObj, timetable, setup, leaves, ods, changeLogs } = userRes.data.data;
+        if (isHod && user?.department && userObj.department !== user.department) {
+          toast.error('Access denied. This user belongs to a different department.');
+          navigate('/admin/users');
+          return;
+        }
         setUserData(userObj);
         setTimetableSlots(timetable || []);
         setSetupData(setup);

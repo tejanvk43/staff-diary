@@ -4,6 +4,7 @@ import { Download, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
 import api from '../../api/axios';
 import AppLayout from '../../components/AppLayout';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../../hooks/useAuth';
 
 // ─── Colour palette matching SubjectsPage ────────────────────────────────────
 const TYPE_PALETTE = [
@@ -20,6 +21,8 @@ const TYPE_PALETTE = [
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 export default function ConflictsPage() {
+  const { user } = useAuth();
+  const isHod = user?.role === 'HOD';
   const [conflicts, setConflicts]     = useState([]);
   const [subjectTypes, setTypes]      = useState([]);
   const [loading, setLoading]         = useState(true);
@@ -52,7 +55,14 @@ export default function ConflictsPage() {
 
   const getColor = (typeName) => colorMap[typeName] || TYPE_PALETTE[0];
 
-  const filtered = conflicts.filter(c => {
+  const deptFilteredConflicts = isHod && user?.department
+    ? conflicts.filter(c => {
+        const depts = (c.departments || '').split(',').map(d => d.trim());
+        return depts.includes(user.department);
+      })
+    : conflicts;
+
+  const filtered = deptFilteredConflicts.filter(c => {
     if (filterDay  && c.day          !== filterDay)  return false;
     if (filterType && c.subject_type !== filterType) return false;
     return true;
@@ -100,14 +110,14 @@ export default function ConflictsPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 24 }}>
         {/* Total */}
         <div className="stat-card">
-          <div className="stat-value" style={{ color: 'var(--color-danger)' }}>{conflicts.length}</div>
+          <div className="stat-value" style={{ color: 'var(--color-danger)' }}>{deptFilteredConflicts.length}</div>
           <div className="stat-label">Total Conflicts</div>
         </div>
 
         {/* One card per subject type */}
         {subjectTypes.map((t, idx) => {
           const col   = TYPE_PALETTE[idx % TYPE_PALETTE.length];
-          const count = conflicts.filter(c => c.subject_type === t.name).length;
+          const count = deptFilteredConflicts.filter(c => c.subject_type === t.name).length;
           return (
             <div key={t.id} className="stat-card" style={{ borderColor: count > 0 ? col.text : undefined, transition: 'border-color .2s' }}>
               <div className="stat-value" style={{ color: count > 0 ? col.text : 'var(--color-text-muted)' }}>

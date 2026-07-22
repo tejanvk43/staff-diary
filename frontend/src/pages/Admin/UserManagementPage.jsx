@@ -545,22 +545,35 @@ export default function UserManagementPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [usersRes, deptsRes, progRes, bankRes] = await Promise.all([
+      const promises = [
         api.get('/api/admin/users'),
         api.get('/api/admin/departments'),
-        api.get('/api/admin/programs'),
-        api.get('/api/admin/bank-requests')
-      ]);
-      setUsers(usersRes.data.data || []);
-      setDepts(deptsRes.data.data || []);
-      setPrograms(progRes.data.data || []);
-      setBankRequests(bankRes.data.data || []);
+        api.get('/api/admin/programs')
+      ];
+      if (!isHod) {
+        promises.push(api.get('/api/admin/bank-requests'));
+      }
+      const results = await Promise.all(promises);
+      setUsers(results[0].data.data || []);
+      setDepts(results[1].data.data || []);
+      setPrograms(results[2].data.data || []);
+      if (!isHod) {
+        setBankRequests(results[3]?.data?.data || []);
+      } else {
+        setBankRequests([]);
+      }
       setSelectedEmployees([]);
     } catch (_) { toast.error('Failed to load users list.'); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (isHod && user?.department) {
+      setDeptFilter(user.department);
+    }
+  }, [isHod, user]);
 
   const filtered = users.filter(u => {
     const s = search.toLowerCase();

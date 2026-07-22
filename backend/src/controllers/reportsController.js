@@ -108,7 +108,16 @@ async function conflictReport(req, res) {
       allConflicts.push(...rows);
     }
 
-    return res.json({ success: true, data: allConflicts });
+    const { role, department } = req.user;
+    let filteredConflicts = allConflicts;
+    if (role === 'HOD') {
+      filteredConflicts = allConflicts.filter(c => {
+        const depts = (c.departments || '').split(',').map(d => d.trim());
+        return depts.includes(department);
+      });
+    }
+
+    return res.json({ success: true, data: filteredConflicts });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error.' });
@@ -117,25 +126,31 @@ async function conflictReport(req, res) {
 
 // ─── GET /api/reports/unassigned ─────────────────────────────────────────────
 async function unassignedReport(req, res) {
+  const { role, department } = req.user;
   const { format } = req.query;
 
   try {
-    const [slots] = await pool.query(
-      `SELECT bts.*, 
+    let sql = `SELECT bts.*, 
               bt.education_type AS programme, 
               bt.year, 
               bt.department AS branch, 
               bt.section
        FROM block_timetable_slots bts
-       JOIN block_timetables bt ON bts.timetable_id = bt.id
-       ORDER BY 
+       JOIN block_timetables bt ON bts.timetable_id = bt.id`;
+    const params = [];
+    if (role === 'HOD') {
+      sql += ' WHERE bt.department = ?';
+      params.push(department);
+    }
+    sql += ` ORDER BY 
          bt.education_type, 
          bt.year, 
          bt.department, 
          bt.section, 
          FIELD(bts.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'), 
-         bts.from_time`
-    );
+         bts.from_time`;
+
+    const [slots] = await pool.query(sql, params);
 
     const reportRows = [];
 

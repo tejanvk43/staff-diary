@@ -104,12 +104,19 @@ export default function ApprovalsPage() {
     setLoading(true);
     try {
       const res = await api.get('/api/admin/approvals/pending');
-      setChanges(res.data.data?.changes || []);
+      const allChanges = res.data.data?.changes || [];
+      if (isHod && user?.department) {
+        setChanges(allChanges.filter(c => c.department === user.department));
+      } else {
+        setChanges(allChanges);
+      }
     } catch (_) { toast.error('Failed to load approvals.'); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, [user]);
 
   const approve = async (id, status, remarks) => {
     await api.put(`/api/admin/approvals/change-request/${id}`, { status, remarks });

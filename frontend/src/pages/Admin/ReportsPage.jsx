@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { BarChart2, Download, Loader2, Search } from 'lucide-react';
 import api from '../../api/axios';
 import AppLayout from '../../components/AppLayout';
+import { useAuth } from '../../hooks/useAuth';
 
 const REPORT_TYPES = [
   { key: 'diary',       label: 'Diary Report',      endpoint: '/api/reports/diary' },
@@ -13,6 +14,8 @@ const REPORT_TYPES = [
 ];
 
 export default function ReportsPage() {
+  const { user } = useAuth();
+  const isHod = user?.role === 'HOD';
   const [reportType, setReportType] = useState('diary');
   const [fromDate, setFromDate]     = useState(format(new Date(), 'yyyy-MM-01'));
   const [toDate, setToDate]         = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -144,7 +147,9 @@ export default function ReportsPage() {
                     <label className="form-label" htmlFor="report-user">Employee (optional)</label>
                     <select id="report-user" className="input" value={selectedUser} onChange={e => setUser(e.target.value)}>
                       <option value="">All Employees</option>
-                      {users.map(u => <option key={u.employee_id} value={u.employee_id}>{u.full_name}</option>)}
+                      {users
+                        .filter(u => !isHod || u.department === user?.department)
+                        .map(u => <option key={u.employee_id} value={u.employee_id}>{u.full_name}</option>)}
                     </select>
                   </div>
                   {reportType === 'leave' && (

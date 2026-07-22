@@ -5,14 +5,19 @@ const { parseExcelBuffer } = require('../utils/excelParser');
 async function listBlockTimetables(req, res) {
   try {
     const { source } = req.query; // 'manual' | 'imported' | undefined (all)
+    const { role, department } = req.user;
     let sql = `SELECT bt.*, 
         (SELECT COUNT(*) FROM block_timetable_slots bts WHERE bts.timetable_id = bt.id) AS slot_count,
         u.full_name AS created_by_name
        FROM block_timetables bt
-       LEFT JOIN users u ON bt.created_by = u.employee_id`;
+       LEFT JOIN users u ON bt.created_by = u.employee_id WHERE 1=1`;
     const params = [];
+    if (role === 'HOD') {
+      sql += ' AND (bt.department = ? OR bt.department = "General")';
+      params.push(department);
+    }
     if (source === 'manual' || source === 'imported') {
-      sql += ' WHERE bt.source = ?';
+      sql += ' AND bt.source = ?';
       params.push(source);
     }
     sql += ' ORDER BY bt.department, bt.year, bt.section';
