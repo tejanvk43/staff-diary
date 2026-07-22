@@ -23,7 +23,6 @@ const approvalsRoutes     = require('./src/routes/approvals');
 const reportsRoutes       = require('./src/routes/reports');
 const notificationsRoutes = require('./src/routes/notifications');
 const adminRoutes         = require('./src/routes/admin');
-const attendanceRoutes        = require('./src/routes/attendance');
 const blockTimetableRoutes    = require('./src/routes/blockTimetable');
 const facultySetupRoutes      = require('./src/routes/facultySetup');
 
@@ -56,7 +55,6 @@ app.use('/api/timetable',               timetableRoutes);
 app.use('/api/requests',                requestRoutes);
 app.use('/api/reports',                 reportsRoutes);
 app.use('/api/notifications',           notificationsRoutes);
-app.use('/api/attendance',              attendanceRoutes);
 // Generic /api/admin LAST — catches /api/admin/config, /api/admin/holidays, /api/admin/departments, /api/admin/subjects
 app.use('/api/admin',                   adminRoutes);
 

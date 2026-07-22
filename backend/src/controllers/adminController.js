@@ -916,6 +916,260 @@ async function deleteSubjectType(req, res) {
   }
 }
 
+// ─── GET /api/admin/bank-requests ────────────────────────────────────────────
+async function listBankRequests(req, res) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT r.*, u.full_name, u.department 
+       FROM bank_detail_change_requests r
+       JOIN users u ON r.employee_id = u.employee_id
+       ORDER BY r.created_at DESC`
+    );
+    return res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error retrieving bank requests.' });
+  }
+}
+
+// ─── POST /api/admin/bank-requests/:id/review ─────────────────────────────────
+async function reviewBankRequest(req, res) {
+  const { id } = req.params;
+  const { status, remarks } = req.body;
+  const admin_emp_id = req.user.employee_id;
+
+  if (!['Approved', 'Rejected'].includes(status)) {
+    return res.status(400).json({ success: false, message: 'Invalid status.' });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [reqRows] = await conn.query('SELECT * FROM bank_detail_change_requests WHERE id = ?', [id]);
+    if (reqRows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ success: false, message: 'Request not found.' });
+    }
+
+    const changeReq = reqRows[0];
+    if (changeReq.status !== 'Pending') {
+      await conn.rollback();
+      return res.status(400).json({ success: false, message: 'Request has already been reviewed.' });
+    }
+
+    await conn.query(
+      'UPDATE bank_detail_change_requests SET status = ?, reviewed_by = ?, reviewed_at = NOW(), remarks = ? WHERE id = ?',
+      [status, admin_emp_id, remarks || null, id]
+    );
+
+    if (status === 'Approved') {
+      await conn.query(
+        'UPDATE users SET bank_name = ?, bank_account_no = ?, bank_ifsc = ? WHERE employee_id = ?',
+        [changeReq.new_bank_name, changeReq.new_bank_account_no, changeReq.new_bank_ifsc, changeReq.employee_id]
+      );
+    }
+
+    await conn.commit();
+    return res.json({ success: true, message: `Request successfully ${status.toLowerCase()}.` });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error reviewing bank request.' });
+  } finally {
+    conn.release();
+  }
+}
+
+// ─── GET /api/admin/users/:employee_id/full ──────────────────────────────────
+async function getUserFullDetails(req, res) {
+  const { employee_id } = req.params;
+  try {
+    const [userRows] = await pool.query(
+      `SELECT employee_id, full_name, short_name, highest_qualification, department, 
+              designation, phone_number, bank_name, bank_account_no, bank_ifsc, 
+              bank_details_submitted, email, role, is_first_login, created_at 
+       FROM users WHERE employee_id = ?`,
+      [employee_id]
+    );
+
+    const user = userRows[0];
+
+    if (req.user.role === 'HOD' && user.department !== req.user.department) {
+      return res.status(403).json({ success: false, message: 'Forbidden. HOD can only view department staff.' });
+    }
+
+    // Fetch timetable
+    const [timetable] = await pool.query(
+      `SELECT t.*, s.subject_name, s.subject_code 
+       FROM timetables t
+       LEFT JOIN subjects s ON t.subject_id = s.id
+       WHERE t.employee_id = ?
+       ORDER BY FIELD(t.day, 'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), t.from_time`,
+      [employee_id]
+    );
+
+    // Fetch setup
+    const [courses] = await pool.query('SELECT * FROM faculty_courses WHERE employee_id = ?', [employee_id]);
+    const [blocks] = await pool.query(
+      `SELECT fba.block_id, bt.name AS block_name, bt.education_type, bt.year, bt.section
+       FROM faculty_block_assignments fba
+       JOIN block_timetables bt ON fba.block_id = bt.id
+       WHERE fba.employee_id = ?`,
+      [employee_id]
+    );
+    const [subjects] = await pool.query(
+      `SELECT fs.subject_id, s.subject_name, s.subject_code, s.subject_type, s.education_type, s.year
+       FROM faculty_subjects fs
+       JOIN subjects s ON fs.subject_id = s.id
+       WHERE fs.employee_id = ?`,
+      [employee_id]
+    );
+    const [otherWorks] = await pool.query('SELECT * FROM faculty_other_works WHERE employee_id = ?', [employee_id]);
+
+    const [leaves] = await pool.query('SELECT * FROM leave_requests WHERE employee_id = ? ORDER BY leave_date DESC', [employee_id]);
+    const [ods] = await pool.query('SELECT * FROM on_duty_requests WHERE employee_id = ? ORDER BY od_date DESC', [employee_id]);
+    const [changeLogs] = await pool.query('SELECT * FROM request_detail_changes WHERE employee_id = ? ORDER BY created_at DESC', [employee_id]);
+
+    return res.json({
+      success: true,
+      data: {
+        user,
+        timetable,
+        setup: { courses, blocks, subjects, otherWorks },
+        leaves,
+        ods,
+        changeLogs
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error retrieving user details.' });
+  }
+}
+
+// ─── PUT /api/admin/users/:employee_id/timetable ─────────────────────────────
+async function adminUpdateUserTimetable(req, res) {
+  const { employee_id } = req.params;
+  const { slots } = req.body;
+
+  if (!Array.isArray(slots)) {
+    return res.status(400).json({ success: false, message: 'slots must be an array.' });
+  }
+
+  // Validate time overlaps/collisions within the incoming slots list
+  for (let i = 0; i < slots.length; i++) {
+    const s1 = slots[i];
+    if (!s1.day || !s1.from_time || !s1.to_time) {
+      return res.status(400).json({ success: false, message: `Slot at index ${i} is missing day, from_time, or to_time.` });
+    }
+    
+    const f1 = s1.from_time.slice(0, 5);
+    const t1 = s1.to_time.slice(0, 5);
+    if (f1 >= t1) {
+      return res.status(400).json({ success: false, message: `Slot at index ${i}: from_time must be before to_time.` });
+    }
+
+    for (let j = i + 1; j < slots.length; j++) {
+      const s2 = slots[j];
+      if (s1.day === s2.day) {
+        const f2 = s2.from_time.slice(0, 5);
+        const t2 = s2.to_time.slice(0, 5);
+        if (f1 < t2 && f2 < t1) {
+          return res.status(400).json({
+            success: false,
+            message: `Overlapping slots detected: ${s1.day} ${f1}-${t1} overlaps with ${f2}-${t2}.`
+          });
+        }
+      }
+    }
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [userRows] = await conn.query('SELECT employee_id FROM users WHERE employee_id = ?', [employee_id]);
+    if (userRows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    await conn.query('DELETE FROM timetables WHERE employee_id = ?', [employee_id]);
+
+    if (slots.length > 0) {
+      const values = slots.map(s => [
+        employee_id,
+        s.subject_id || null,
+        s.short_name || null,
+        s.day,
+        s.from_time,
+        s.to_time,
+        s.subject_type || 'Theory',
+        s.education_type || null,
+        s.year || null,
+        s.section || null,
+        s.room_number || null
+      ]);
+
+      await conn.query(
+        `INSERT INTO timetables (employee_id, subject_id, short_name, day, from_time, to_time, subject_type, education_type, year, section, room_number)
+         VALUES ?`,
+        [values]
+      );
+    }
+
+    await conn.commit();
+    return res.json({ success: true, message: 'Timetable updated successfully.' });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error updating user timetable.' });
+  } finally {
+    conn.release();
+  }
+}
+
+// ─── GET /api/admin/users/export ─────────────────────────────────────────────
+async function exportUsers(req, res) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT employee_id, full_name, short_name, highest_qualification, department, 
+              designation, phone_number, bank_name, bank_account_no, bank_ifsc, 
+              bank_details_submitted, email, role, is_first_login, created_at 
+       FROM users ORDER BY created_at DESC`
+    );
+
+    const { generateExcelBuffer } = require('../utils/excelParser');
+
+    const formatted = rows.map(r => ({
+      'Employee ID': r.employee_id,
+      'Full Name': r.full_name,
+      'Short Name': r.short_name || '',
+      'Highest Qualification': r.highest_qualification,
+      'Department': r.department,
+      'Designation': r.designation || '',
+      'Phone Number': r.phone_number || '',
+      'Bank Name': r.bank_name || '',
+      'Bank Account Number': r.bank_account_no || '',
+      'IFSC Code': r.bank_ifsc || '',
+      'Bank Details Submitted?': r.bank_details_submitted ? 'Yes' : 'No',
+      'Email': r.email,
+      'Role': r.role,
+      'First Login?': r.is_first_login ? 'Yes' : 'No',
+      'Created At': r.created_at
+    }));
+
+    const buffer = generateExcelBuffer(formatted, 'Users List');
+    res.setHeader('Content-Disposition', 'attachment; filename="users_export.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return res.send(buffer);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error exporting users.' });
+  }
+}
+
 module.exports = {
   getConfig, updateConfig,
   getHolidays, addHoliday, deleteHoliday,
@@ -928,4 +1182,5 @@ module.exports = {
   addProgramBranch, deleteProgramBranch, getAllProgramDetails,
   updateProgram, updateProgramYear, updateProgramBranch,
   getSubjectTypes, addSubjectType, updateSubjectType, deleteSubjectType,
+  listBankRequests, reviewBankRequest, getUserFullDetails, adminUpdateUserTimetable, exportUsers
 };

@@ -30,5 +30,10 @@ export default function ProtectedRoute({ children, roles }) {
     return <Navigate to="/change-password" replace />;
   }
 
+  // Force bank details setup on first login (after password change)
+  if (!user.is_first_login && !user.bank_details_submitted && window.location.pathname !== '/bank-details-setup') {
+    return <Navigate to="/bank-details-setup" replace />;
+  }
+
   return children;
 }

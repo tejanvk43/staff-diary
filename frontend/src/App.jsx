@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 // Auth pages
 import LoginPage         from './pages/LoginPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
+import BankDetailsSetupPage from './pages/BankDetailsSetupPage';
 
 // Faculty / shared pages
 import FacultyDashboard  from './pages/Faculty/FacultyDashboard';
@@ -21,6 +22,7 @@ import ProfilePage       from './pages/ProfilePage';
 
 // Admin pages
 import UserManagementPage from './pages/Admin/UserManagementPage';
+import AdminUserDetailPage from './pages/Admin/AdminUserDetailPage';
 import ApprovalsPage      from './pages/Admin/ApprovalsPage';
 import ConflictsPage      from './pages/Admin/ConflictsPage';
 import ReportsPage        from './pages/Admin/ReportsPage';
@@ -29,7 +31,6 @@ import HolidaysPage       from './pages/Admin/HolidaysPage';
 import SubjectsPage       from './pages/Admin/SubjectsPage';
 import DepartmentsPage    from './pages/Admin/DepartmentsPage';
 import SectionsPage       from './pages/Admin/SectionsPage';
-import AttendancePage     from './pages/Admin/AttendancePage';
 import BlockTimetablePage       from './pages/Admin/BlockTimetablePage';
 import BlockTimetableEditorPage from './pages/Admin/BlockTimetableEditorPage';
 import ProgramsPage       from './pages/Admin/ProgramsPage';
@@ -64,6 +65,13 @@ function App() {
           <Route path="/change-password" element={
             <ProtectedRoute>
               <ChangePasswordPage />
+            </ProtectedRoute>
+          } />
+
+          {/* Bank Details Setup */}
+          <Route path="/bank-details-setup" element={
+            <ProtectedRoute>
+              <BankDetailsSetupPage />
             </ProtectedRoute>
           } />
 
@@ -129,16 +137,16 @@ function App() {
               <ReportsPage />
             </ProtectedRoute>
           } />
-          <Route path="/admin/attendance" element={
-            <ProtectedRoute roles={['Admin','HOD']}>
-              <AttendancePage />
-            </ProtectedRoute>
-          } />
 
           {/* Admin-only routes */}
           <Route path="/admin/users" element={
             <ProtectedRoute roles={['Admin']}>
               <UserManagementPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/users/:employee_id" element={
+            <ProtectedRoute roles={['Admin']}>
+              <AdminUserDetailPage />
             </ProtectedRoute>
           } />
           <Route path="/admin/config" element={

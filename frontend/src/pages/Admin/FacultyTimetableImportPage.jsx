@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { Upload, Download, Loader2, Calendar, BookOpen, User, X, CheckCircle, Search, Trash2, AlertTriangle } from 'lucide-react';
+import { Upload, Download, Loader2, Calendar, BookOpen, User, X, CheckCircle, Search, Trash2, AlertTriangle, Plus, Save, Edit2 } from 'lucide-react';
 import api from '../../api/axios';
 import AppLayout from '../../components/AppLayout';
 import * as XLSX from 'xlsx';
@@ -38,6 +38,17 @@ export default function FacultyTimetableImportPage() {
   const [bulkResult, setBulkResult] = useState(null);
   const [showBulkSummary, setShowBulkSummary] = useState(false);
 
+  const [facultySearchText, setFacultySearchText] = useState('');
+  const [allSubjects, setAllSubjects] = useState([]);
+  const [allSections, setAllSections] = useState([]);
+  const [saving, setSaving] = useState(false);
+
+  const [showModal, setShowModal] = useState(false);
+  const [editSlot, setEditSlot] = useState(null);
+  const [clickDay, setClickDay] = useState(null);
+  const [clickTime, setClickTime] = useState(null);
+  const [setupData, setSetupData] = useState(null);
+
   const fileRef = useRef();
 
   const [showResetModal, setShowResetModal] = useState(false);
@@ -45,14 +56,18 @@ export default function FacultyTimetableImportPage() {
 
   const loadInitialData = async () => {
     try {
-      const [usersRes, deptsRes] = await Promise.all([
+      const [usersRes, deptsRes, subjectsRes, sectionsRes] = await Promise.all([
         api.get('/api/admin/users'),
-        api.get('/api/admin/departments')
+        api.get('/api/admin/departments'),
+        api.get('/api/admin/subjects'),
+        api.get('/api/admin/sections')
       ]);
       setUsers(usersRes.data.data || []);
       setDepts(deptsRes.data.data || []);
+      setAllSubjects(subjectsRes.data.data || []);
+      setAllSections(sectionsRes.data.data || []);
     } catch (_) {
-      toast.error('Failed to load filters data.');
+      toast.error('Failed to load initial data.');
     }
   };
 
@@ -63,10 +78,12 @@ export default function FacultyTimetableImportPage() {
   const loadFacultyTimetable = async (employeeId) => {
     setLoadingTimetable(true);
     try {
-      const res = await api.get(`/api/timetable?employee_id=${employeeId}`);
-      setTimetableSlots(res.data.data || []);
+      const res = await api.get(`/api/admin/users/${employeeId}/full`);
+      const { timetable, setup } = res.data.data;
+      setTimetableSlots(timetable || []);
+      setSetupData(setup || null);
     } catch (_) {
-      toast.error('Failed to load faculty timetable.');
+      toast.error('Failed to load faculty timetable details.');
     } finally {
       setLoadingTimetable(false);
     }
@@ -78,6 +95,137 @@ export default function FacultyTimetableImportPage() {
       loadFacultyTimetable(empId);
     } else {
       setTimetableSlots([]);
+      setSetupData(null);
+    }
+  };
+
+  const openAdd = (day, time) => {
+    setEditSlot(null);
+    setClickDay(day);
+    setClickTime(time);
+    setShowModal(true);
+  };
+
+  const openEdit = (slot) => {
+    setEditSlot(slot);
+    setClickDay(null);
+    setClickTime(null);
+    setShowModal(true);
+  };
+
+  const handleDeleteSlot = async (slotId) => {
+    if (!window.confirm('Remove this timetable slot?')) return;
+    const updatedSlots = timetableSlots.filter(s => String(s.id) !== String(slotId));
+    await saveTimetableListToServer(updatedSlots);
+  };
+
+  const handleSaveSlot = async (newSlotData) => {
+    let updatedSlots;
+    if (editSlot) {
+      updatedSlots = timetableSlots.map(s => String(s.id) === String(editSlot.id) ? { ...s, ...newSlotData } : s);
+    } else {
+      updatedSlots = [...timetableSlots, { id: `new-${Math.random()}`, ...newSlotData }];
+    }
+    await saveTimetableListToServer(updatedSlots);
+  };
+
+  const saveTimetableListToServer = async (slotsList) => {
+    setSaving(true);
+    try {
+      const formattedSlots = slotsList.map(s => {
+        const matchSubj = allSubjects.find(sub => sub.id === Number(s.subject_id)) || (setupData?.subjects || []).find(sub => sub.subject_id === Number(s.subject_id));
+        return {
+          day: s.day,
+          from_time: s.from_time.slice(0, 5),
+          to_time: s.to_time.slice(0, 5),
+          subject_id: s.subject_id ? Number(s.subject_id) : null,
+          subject_type: s.subject_type || (matchSubj ? matchSubj.subject_type : 'Theory'),
+          education_type: s.education_type || (matchSubj ? matchSubj.education_type : null),
+          year: s.year || (matchSubj ? matchSubj.year : null),
+          section: s.section || null,
+          room_number: s.room_number || null,
+          block_id: s.block_id ? Number(s.block_id) : null
+        };
+      });
+
+      await api.put(`/api/admin/users/${selectedFaculty}/timetable`, { slots: formattedSlots });
+      toast.success('Timetable overrides updated successfully!');
+      loadFacultyTimetable(selectedFaculty);
+      setShowModal(false);
+      setEditSlot(null);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save timetable.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addTimetableSlot = () => {
+    setTimetableSlots(prev => [
+      ...prev,
+      {
+        id: `new-${Math.random()}`,
+        day: 'Monday',
+        from_time: '09:00',
+        to_time: '10:00',
+        subject_id: '',
+        subject_type: 'Theory',
+        education_type: 'B-Tech',
+        year: 1,
+        section: '',
+        room_number: ''
+      }
+    ]);
+  };
+
+  const removeTimetableSlot = (id) => {
+    setTimetableSlots(prev => prev.filter(s => s.id !== id));
+  };
+
+  const updateTimetableSlot = (id, field, value) => {
+    setTimetableSlots(prev => prev.map(s => {
+      if (s.id === id) {
+        const updated = { ...s, [field]: value };
+        if (field === 'subject_id' && value) {
+          const matchSubj = allSubjects.find(sub => sub.id === Number(value));
+          if (matchSubj) {
+            updated.subject_type = matchSubj.subject_type;
+            updated.education_type = matchSubj.education_type;
+            updated.year = matchSubj.year;
+          }
+        }
+        return updated;
+      }
+      return s;
+    }));
+  };
+
+  const handleSaveTimetable = async () => {
+    if (!selectedFaculty) return;
+    setSaving(true);
+    try {
+      const formattedSlots = timetableSlots.map(s => {
+        const matchSubj = allSubjects.find(sub => sub.id === Number(s.subject_id));
+        return {
+          day: s.day,
+          from_time: s.from_time.slice(0, 5),
+          to_time: s.to_time.slice(0, 5),
+          subject_id: s.subject_id ? Number(s.subject_id) : null,
+          subject_type: s.subject_type || (matchSubj ? matchSubj.subject_type : 'Theory'),
+          education_type: s.education_type || (matchSubj ? matchSubj.education_type : null),
+          year: s.year || (matchSubj ? matchSubj.year : null),
+          section: s.section || null,
+          room_number: s.room_number || null
+        };
+      });
+
+      await api.put(`/api/admin/users/${selectedFaculty}/timetable`, { slots: formattedSlots });
+      toast.success('Timetable updated successfully!');
+      loadFacultyTimetable(selectedFaculty);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save timetable.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -168,7 +316,10 @@ export default function FacultyTimetableImportPage() {
   const filteredFacultyList = users.filter(u => {
     const isFacultyOrHod = u.role === 'Faculty' || u.role === 'HOD';
     const matchesDept = !selectedDept || u.department === selectedDept;
-    return isFacultyOrHod && matchesDept;
+    const matchesSearch = !facultySearchText ||
+      u.full_name.toLowerCase().includes(facultySearchText.toLowerCase()) ||
+      u.employee_id.toLowerCase().includes(facultySearchText.toLowerCase());
+    return isFacultyOrHod && matchesDept && matchesSearch;
   });
 
   const getPeriodNumber = (fromTime, educationType) => {
@@ -254,8 +405,8 @@ export default function FacultyTimetableImportPage() {
 
       {/* Filter Card */}
       <div className="card" style={{ padding: 18, marginBottom: 20 }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', gap: 14, alignItems: 'flex-end' }}>
+          <div>
             <label className="form-label" htmlFor="dept-select">Filter Department</label>
             <select
               id="dept-select"
@@ -269,7 +420,17 @@ export default function FacultyTimetableImportPage() {
               ))}
             </select>
           </div>
-          <div style={{ flex: 1.5, minWidth: 240 }}>
+          <div>
+            <label className="form-label" htmlFor="faculty-search-input">Search Faculty</label>
+            <input
+              id="faculty-search-input"
+              className="input"
+              placeholder="Type name or ID to filter dropdown..."
+              value={facultySearchText}
+              onChange={e => setFacultySearchText(e.target.value)}
+            />
+          </div>
+          <div>
             <label className="form-label" htmlFor="faculty-select">Select Faculty Member *</label>
             <select
               id="faculty-select"
@@ -299,132 +460,256 @@ export default function FacultyTimetableImportPage() {
           <Search size={48} style={{ opacity: 0.25, marginBottom: 12 }} />
           <h3 style={{ fontWeight: 600 }}>Select a faculty member</h3>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem', marginTop: 4 }}>
-            Choose a department or select a faculty member from the dropdown to preview their schedule.
-          </p>
-        </div>
-      ) : timetableSlots.length === 0 ? (
-        <div className="empty-state" style={{ padding: '70px 20px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12 }}>
-          <Calendar size={48} style={{ opacity: 0.25, marginBottom: 12 }} />
-          <h3 style={{ fontWeight: 600 }}>No timetable slots</h3>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem', marginTop: 4 }}>
-            This faculty member has no periods mapped to their schedule. Use bulk import to assign periods.
+            Choose a department or search/select a faculty member from the dropdown to preview and edit their schedule.
           </p>
         </div>
       ) : (
-        <div className="card" style={{ padding: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-            <Calendar size={18} style={{ color: 'var(--color-primary)' }} />
-            <span style={{ fontWeight: 700 }}>
-              Weekly Timetable for {users.find(u => u.employee_id === selectedFaculty)?.full_name}
-            </span>
-          </div>
+        <>
+          {timetableSlots.filter(s => !String(s.id).startsWith('new-')).length === 0 ? (
+            <div className="empty-state" style={{ padding: '40px 20px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 12, marginBottom: 20 }}>
+              <Calendar size={48} style={{ opacity: 0.25, marginBottom: 12 }} />
+              <h3 style={{ fontWeight: 600 }}>No timetable slots</h3>
+              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem', marginTop: 4 }}>
+                This faculty member has no periods mapped to their schedule. Use the editor below to add slots or upload a timetable sheet.
+              </p>
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 20, marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <Calendar size={18} style={{ color: 'var(--color-primary)' }} />
+                <span style={{ fontWeight: 700 }}>
+                  Weekly Timetable for {users.find(u => u.employee_id === selectedFaculty)?.full_name}
+                </span>
+              </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
-              <colgroup>
-                <col style={{ width: 84 }} />
-                {[1, 2, 3, 4, 5, 6].map(p => (
-                  <col key={p} style={{ width: `${100 / 6}%` }} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr>
-                  <th style={{
-                    padding: '12px 14px', fontSize: '0.78rem', fontWeight: 700,
-                    color: 'var(--color-text)',
-                    background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
-                    borderRight: 'none', borderRadius: '10px 0 0 0', textAlign: 'center'
-                  }}>
-                    Day
-                  </th>
-                  {[1, 2, 3, 4, 5, 6].map((p, i) => (
-                    <th key={p} style={{
-                      padding: '12px 8px', background: 'var(--color-surface-2)',
-                      border: '1px solid var(--color-border)', borderLeft: 'none',
-                      borderRadius: i === 5 ? '0 10px 0 0' : 0, textAlign: 'center',
-                      fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-text)'
-                    }}>
-                      Period {p}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {DAYS.map((day, rowIdx) => {
-                  const isLast = rowIdx === DAYS.length - 1;
-                  return (
-                    <tr key={day}>
-                      <td style={{
-                        padding: '14px 8px', background: 'var(--color-surface-2)',
-                        border: '1px solid var(--color-border)', borderTop: 'none', borderRight: 'none',
-                        borderRadius: isLast ? '0 0 0 10px' : 0, textAlign: 'center',
-                        fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text)'
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: 84 }} />
+                    {[1, 2, 3, 4, 5, 6].map(p => (
+                      <col key={p} style={{ width: `${100 / 6}%` }} />
+                    ))}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th style={{
+                        padding: '12px 14px', fontSize: '0.78rem', fontWeight: 700,
+                        color: 'var(--color-text)',
+                        background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+                        borderRight: 'none', borderRadius: '10px 0 0 0', textAlign: 'center'
                       }}>
-                        {DAY_SHORT[day]}
-                      </td>
-                      {[1, 2, 3, 4, 5, 6].map((p, colIdx) => {
-                        const cellSlots = getSlotsForCell(day, p);
-                        const isLastCol = colIdx === 5;
-                        return (
-                          <td key={p} style={{
-                            padding: 6, border: '1px solid var(--color-border)',
-                            borderTop: 'none', borderLeft: 'none',
-                            borderRadius: isLast && isLastCol ? '0 0 10px 0' : 0,
-                            verticalAlign: 'top', background: 'var(--color-bg)',
-                            minHeight: 80
-                          }}>
-                            {cellSlots.map(s => {
-                              const color = TYPE_COLORS[s.subject_type] || '#64748b';
-                              
-                              let displayCode = s.short_name || s.subject_code || '';
-                              let displayBranch = '';
-                              if (displayCode.includes('_')) {
-                                const parts = displayCode.split('_');
-                                displayBranch = parts[0];
-                                displayCode = parts.slice(1).join('_');
-                              }
-                              const mainTitle = displayCode;
-
-                              const ROMAN_YEARS = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
-                              const yrLabel = `${ROMAN_YEARS[s.year] || s.year} Year`;
-                              const currentMonth = new Date().getMonth();
-                              const isEvenSemester = currentMonth >= 0 && currentMonth <= 5;
-                              const semNumber = isEvenSemester ? (s.year * 2) : (s.year * 2 - 1);
-                              const semLabel = semNumber % 2 === 0 ? 'II Semester' : 'I Semester';
-                              const secLabel = s.section ? `, ${s.section}` : '';
-
-                              const formattedTimings = `${formatTime12h(s.from_time)} - ${formatTime12h(s.to_time)}`;
-                              const blockName = s.room_number || '';
-
-                              return (
-                                <div key={s.id} style={{
-                                  background: TYPE_BG[s.subject_type] || 'rgba(100,116,139,0.06)',
-                                  border: `1px solid ${TYPE_BORDER[s.subject_type] || 'rgba(100,116,139,0.2)'}`,
-                                  borderLeft: `3px solid ${color}`, borderRadius: 6,
-                                  padding: '6px 8px', fontSize: '0.7rem',
-                                  display: 'flex', flexDirection: 'column', gap: 2,
-                                  textAlign: 'center'
-                                }}>
-                                  <div style={{ fontWeight: 700, color }}>{mainTitle}</div>
-                                  <div style={{ color: 'var(--color-text-muted)', fontSize: '0.64rem', lineHeight: 1.3 }}>
-                                    ({s.education_type === 'B-Tech' ? 'B.Tech' : s.education_type} {yrLabel} {semLabel}{secLabel})
-                                  </div>
-                                  <div style={{ color: 'var(--color-text-muted)', fontSize: '0.64rem', fontWeight: 600, marginTop: 2 }}>
-                                    {formattedTimings} {blockName ? `[${blockName}]` : ''}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </td>
-                        );
-                      })}
+                        Day
+                      </th>
+                      {[1, 2, 3, 4, 5, 6].map((p, i) => (
+                        <th key={p} style={{
+                          padding: '12px 8px', background: 'var(--color-surface-2)',
+                          border: '1px solid var(--color-border)', borderLeft: 'none',
+                          borderRadius: i === 5 ? '0 10px 0 0' : 0, textAlign: 'center',
+                          fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-text)'
+                        }}>
+                          Period {p}
+                        </th>
+                      ))}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  </thead>
+                  <tbody>
+                    {DAYS.map((day, rowIdx) => {
+                      const isLast = rowIdx === DAYS.length - 1;
+                      return (
+                        <tr key={day}>
+                          <td style={{
+                            padding: '14px 8px', background: 'var(--color-surface-2)',
+                            border: '1px solid var(--color-border)', borderTop: 'none', borderRight: 'none',
+                            borderBottom: isLast ? '1px solid var(--color-border)' : 'none',
+                            borderRadius: isLast ? '0 0 0 10px' : 0, textAlign: 'center',
+                            fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-text-muted)'
+                          }}>
+                            {day.slice(0, 3)}
+                          </td>
+                          {[1, 2, 3, 4, 5, 6].map((period, colIdx) => {
+                            const isLastCol = colIdx === 5;
+                            const slots = timetableSlots.filter(s => s.day === day && getPeriodNumber(s.from_time, s.education_type) === period);
+
+                            return (
+                              <td
+                                key={period}
+                                onClick={() => user?.role === 'Admin' && slots.length === 0 && openAdd(day, period)}
+                                style={{
+                                  padding: 8, border: '1px solid var(--color-border)',
+                                  borderTop: 'none', borderLeft: 'none',
+                                  borderRight: isLastCol ? '1px solid var(--color-border)' : 'none',
+                                  borderBottom: isLast ? '1px solid var(--color-border)' : 'none',
+                                  borderRadius: (isLast && isLastCol) ? '0 0 10px 0' : 0,
+                                  verticalAlign: 'top', background: 'var(--color-surface)',
+                                  cursor: (user?.role === 'Admin' && slots.length === 0) ? 'pointer' : 'default',
+                                  position: 'relative'
+                                }}
+                                onMouseEnter={e => { if (user?.role === 'Admin' && slots.length === 0) e.currentTarget.style.background = 'var(--color-surface-2)'; }}
+                                onMouseLeave={e => { if (user?.role === 'Admin' && slots.length === 0) e.currentTarget.style.background = 'var(--color-surface)'; }}
+                              >
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                  {slots.map(s => (
+                                    <AdminSlotCell
+                                      key={s.id}
+                                      slot={s}
+                                      onEdit={openEdit}
+                                      onDelete={handleDeleteSlot}
+                                      isAdmin={user?.role === 'Admin'}
+                                    />
+                                  ))}
+                                  {user?.role === 'Admin' && slots.length === 0 && (
+                                    <div style={{
+                                      height: '100%', minHeight: 64, display: 'flex', alignItems: 'center',
+                                      justifyContent: 'center', opacity: 0,
+                                      transition: 'opacity 0.15s',
+                                      color: 'var(--color-text-muted)', fontSize: '0.7rem',
+                                    }}
+                                      className="empty-cell-hint"
+                                    >
+                                      <Plus size={14} />
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {user?.role === 'Admin' && (
+            <div className="card" style={{ padding: 24, marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--color-border)', paddingBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Calendar size={18} style={{ color: 'var(--color-primary)' }} />
+                  <h3 style={{ fontWeight: 700, fontSize: '1rem' }}>Manual Timetable Slot Overrides</h3>
+                </div>
+                <button className="btn btn-secondary" onClick={addTimetableSlot} style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+                  <Plus size={14} /> Add Slot Row
+                </button>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'none' }}>
+                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 60, padding: '10px 8px' }}>S.No</th>
+                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 140, padding: '10px 8px' }}>Day</th>
+                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 120, padding: '10px 8px' }}>From</th>
+                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 120, padding: '10px 8px' }}>To</th>
+                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', padding: '10px 8px' }}>Subject</th>
+                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 110, padding: '10px 8px' }}>Section</th>
+                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 110, padding: '10px 8px' }}>Room</th>
+                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 60, padding: '10px 8px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {timetableSlots.map((slot, idx) => (
+                      <tr key={slot.id || idx} style={{ background: 'none' }}>
+                        <td style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--color-text-muted)', verticalAlign: 'middle' }}>
+                          {idx + 1}
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          <select
+                            className="input"
+                            style={{ padding: '8px', fontSize: '0.85rem' }}
+                            value={slot.day}
+                            onChange={e => updateTimetableSlot(slot.id, 'day', e.target.value)}
+                          >
+                            {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          <input
+                            type="time"
+                            className="input"
+                            style={{ padding: '7px 8px', fontSize: '0.85rem' }}
+                            value={slot.from_time ? slot.from_time.slice(0, 5) : ''}
+                            onChange={e => updateTimetableSlot(slot.id, 'from_time', e.target.value)}
+                          />
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          <input
+                            type="time"
+                            className="input"
+                            style={{ padding: '7px 8px', fontSize: '0.85rem' }}
+                            value={slot.to_time ? slot.to_time.slice(0, 5) : ''}
+                            onChange={e => updateTimetableSlot(slot.id, 'to_time', e.target.value)}
+                          />
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          <select
+                            className="input"
+                            style={{ padding: '8px', fontSize: '0.85rem' }}
+                            value={slot.subject_id || ''}
+                            onChange={e => updateTimetableSlot(slot.id, 'subject_id', e.target.value)}
+                          >
+                            <option value="">— Select Subject —</option>
+                            {allSubjects.map(sub => (
+                              <option key={sub.id} value={sub.id}>
+                                {sub.subject_code} - {sub.subject_name} ({sub.subject_type}) [{sub.education_type}]
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          <select
+                            className="input"
+                            style={{ padding: '8px', fontSize: '0.85rem' }}
+                            value={slot.section || ''}
+                            onChange={e => updateTimetableSlot(slot.id, 'section', e.target.value)}
+                          >
+                            <option value="">— Select —</option>
+                            {[...new Set(allSections.map(sec => sec.section_name))].sort().map(secName => (
+                              <option key={secName} value={secName}>{secName}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          <input
+                            className="input"
+                            style={{ padding: '8px', fontSize: '0.85rem' }}
+                            value={slot.room_number || ''}
+                            onChange={e => updateTimetableSlot(slot.id, 'room_number', e.target.value)}
+                            placeholder="e.g. D-101"
+                          />
+                        </td>
+                        <td style={{ padding: '10px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            onClick={() => removeTimetableSlot(slot.id)}
+                            style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger)', border: '1px solid rgba(239,68,68,0.2)', padding: 7 }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {timetableSlots.length === 0 && (
+                      <tr>
+                        <td colSpan={8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--color-text-muted)', fontSize: '0.88rem' }}>
+                          No weekly timetable slots override configured for this faculty.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
+                <button className="btn btn-primary" onClick={handleSaveTimetable} disabled={saving}>
+                  {saving ? <Loader2 size={14} className="spinner" /> : <Save size={14} />} Save Timetable Overrides
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Bulk Import Summary Modal */}
@@ -442,6 +727,24 @@ export default function FacultyTimetableImportPage() {
           onClose={() => setShowResetModal(false)}
         />
       )}
+
+      {showModal && setupData && (
+        <SlotModal
+          slot={editSlot}
+          day={clickDay}
+          fromTime={clickTime}
+          myBlocks={setupData.blocks || []}
+          myCourses={setupData.courses || []}
+          mySubjects={setupData.subjects || []}
+          onClose={() => { setShowModal(false); setEditSlot(null); }}
+          onSave={handleSaveSlot}
+        />
+      )}
+
+      {/* Global style for hover hint */}
+      <style>{`
+        td:hover .empty-cell-hint { opacity: 1 !important; }
+      `}</style>
     </AppLayout>
   );
 }
@@ -605,6 +908,350 @@ function ResetConfirmModal({ loading, onConfirm, onClose }) {
           >
             {loading ? <Loader2 size={14} className="spinner" /> : <Trash2 size={14} />}
             {loading ? 'Resetting...' : 'Reset All Timetable'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminSlotCell({ slot, onEdit, onDelete, isAdmin }) {
+  const color = TYPE_COLORS[slot.subject_type] || '#64748b';
+  const bg = TYPE_BG[slot.subject_type] || 'rgba(100,116,139,0.06)';
+  const border = TYPE_BORDER[slot.subject_type] || 'rgba(100,116,139,0.2)';
+
+  let displayCode = slot.short_name || slot.subject_code || '';
+  let displayBranch = '';
+  if (displayCode.includes('_')) {
+    const parts = displayCode.split('_');
+    displayBranch = parts[0];
+    displayCode = parts.slice(1).join('_');
+  }
+  const mainTitle = displayCode;
+
+  const ROMAN_YEARS = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
+  const yrLabel = `${ROMAN_YEARS[slot.year] || slot.year} Year`;
+  const currentMonth = new Date().getMonth();
+  const isEvenSemester = currentMonth >= 0 && currentMonth <= 5;
+  const semNumber = isEvenSemester ? (slot.year * 2) : (slot.year * 2 - 1);
+  const semLabel = semNumber % 2 === 0 ? 'II Semester' : 'I Semester';
+  const secLabel = slot.section ? `, ${slot.section}` : '';
+
+  const formattedTimings = `${formatTime12h(slot.from_time)} - ${formatTime12h(slot.to_time)}`;
+  const blockName = slot.room_number || '';
+
+  return (
+    <div style={{
+      background: bg,
+      border: `1px solid ${border}`,
+      borderLeft: `3px solid ${color}`,
+      borderRadius: 8,
+      padding: '7px 9px',
+      position: 'relative',
+      minHeight: 64,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 2,
+      textAlign: 'center',
+      justifyContent: 'center',
+    }}>
+      {/* Subject label */}
+      <div style={{ fontWeight: 700, fontSize: '0.78rem', color, lineHeight: 1.2, paddingRight: isAdmin ? 24 : 0 }}>
+        {mainTitle}
+      </div>
+
+      {/* Class label */}
+      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.66rem', lineHeight: 1.3, paddingRight: isAdmin ? 24 : 0 }}>
+        ({slot.education_type === 'B-Tech' ? 'B.Tech' : slot.education_type} {yrLabel} {semLabel}{secLabel})
+      </div>
+
+      {/* Timing and Block */}
+      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.66rem', fontWeight: 600, marginTop: 2, paddingRight: isAdmin ? 24 : 0 }}>
+        {formattedTimings} {blockName ? `[${blockName}]` : ''}
+      </div>
+
+      {/* Action buttons */}
+      {isAdmin && (
+        <div style={{ position: 'absolute', top: 5, right: 5, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <button
+            title="Edit"
+            onClick={(e) => { e.stopPropagation(); onEdit(slot); }}
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 5, padding: '2px 4px', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center' }}
+          >
+            <Edit2 size={10} />
+          </button>
+          <button
+            title="Delete"
+            onClick={(e) => { e.stopPropagation(); onDelete(slot.id); }}
+            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 5, padding: '2px 4px', cursor: 'pointer', color: 'var(--color-danger)', display: 'flex', alignItems: 'center' }}
+          >
+            <Trash2 size={10} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SlotModal({ slot, day, fromTime, onClose, onSave, myBlocks, myCourses, mySubjects }) {
+  const [blockId,   setBlockId]   = useState(slot?.block_id    || '');
+  const [timeSlot,  setTimeSlot]  = useState(
+    slot ? `${slot.from_time}|${slot.to_time}` : ''
+  );
+  const [courseKey, setCourseKey] = useState(
+    slot ? `${slot.education_type}|${slot.year}|${slot.section}` : ''
+  );
+  const [subjectId, setSubjectId] = useState(slot?.subject_id  || '');
+  const [day_,      setDay]       = useState(slot?.day || day || 'Monday');
+  const [saving,    setSaving]    = useState(false);
+
+  const targetPeriod = fromTime || (slot ? getPeriodNumber(slot.from_time, slot.education_type) : null);
+
+  const isBreakSlot = (s) => {
+    if (!s) return false;
+    const label = (s.short_name || '').toLowerCase();
+    return s.subject_type === 'Break' ||
+           label.includes('break') ||
+           label.includes('lunch') ||
+           label.includes('recess') ||
+           label.includes('interval') ||
+           label.includes('tea') ||
+           label.includes('free');
+  };
+
+  useEffect(() => {
+    if (!slot && fromTime && myBlocks.length > 0) {
+      for (const block of myBlocks) {
+        const matchingSlot = (block.slots || []).find(s => {
+          if (isBreakSlot(s)) return false;
+          const pNum = getPeriodNumber(s.from_time, block.education_type);
+          return pNum === fromTime;
+        });
+        if (matchingSlot) {
+          setCourseKey(`${block.education_type}|${block.year}|${block.section}`);
+          break;
+        }
+      }
+    }
+  }, [slot, fromTime, myBlocks]);
+
+  useEffect(() => {
+    if (courseKey && myBlocks.length > 0) {
+      const parts = courseKey.split('|');
+      const eduType = parts[0];
+      const yr = parseInt(parts[1], 10);
+      const sec = parts[2];
+      const matchingBlock = myBlocks.find(b => 
+        b.education_type === eduType &&
+        b.year === yr &&
+        b.section === sec
+      );
+      if (matchingBlock) {
+        setBlockId(matchingBlock.id);
+      } else {
+        setBlockId('');
+      }
+    } else {
+      setBlockId('');
+    }
+  }, [courseKey, myBlocks]);
+
+  useEffect(() => {
+    if (targetPeriod && blockId && myBlocks.length > 0) {
+      const block = myBlocks.find(b => String(b.id) === String(blockId));
+      if (block) {
+        const matchingSlot = (block.slots || []).find(s => {
+          if (isBreakSlot(s)) return false;
+          const pNum = getPeriodNumber(s.from_time, block.education_type);
+          return pNum === targetPeriod;
+        });
+        if (matchingSlot) {
+          setTimeSlot(`${matchingSlot.from_time}|${matchingSlot.to_time}`);
+        } else {
+          setTimeSlot('');
+        }
+      }
+    }
+  }, [blockId, targetPeriod, myBlocks]);
+
+  const selectedBlock   = myBlocks.find(b => String(b.id) === String(blockId));
+  const availableSlots  = (selectedBlock?.slots || []).filter(s => !isBreakSlot(s));
+
+  const parsedCourse = courseKey
+    ? { education_type: courseKey.split('|')[0], year: parseInt(courseKey.split('|')[1]), section: courseKey.split('|')[2] }
+    : null;
+
+  const filteredSubjects = parsedCourse
+    ? mySubjects.filter(s => s.education_type === parsedCourse.education_type)
+    : mySubjects;
+
+  const EDU_COLORS = { Diploma: '#f59e0b', 'B-Tech': '#6366f1', 'M-Tech': '#8b5cf6' };
+
+  const handleSave = async () => {
+    if (!blockId)   { toast.error('Select a block.'); return; }
+    if (!timeSlot)  { toast.error('Select a time slot.'); return; }
+    if (!courseKey) { toast.error('Select a course/class.'); return; }
+    if (!day_)      { toast.error('Select a day.'); return; }
+
+    const [from_time, to_time] = timeSlot.split('|');
+    const found = mySubjects.find(s => String(s.subject_id || s.id) === String(subjectId));
+
+    setSaving(true);
+    try {
+      await onSave({
+        block_id:       parseInt(blockId),
+        day:            day_,
+        from_time,
+        to_time,
+        education_type: parsedCourse.education_type,
+        year:           parsedCourse.year,
+        section:        parsedCourse.section,
+        subject_id:     subjectId || null,
+        short_name:     found?.subject_code || '',
+        subject_type:   found?.subject_type || 'Theory',
+        room_number:    selectedBlock?.name || '',
+      });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save slot.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div>
+            <h3 style={{ fontWeight: 700, marginBottom: 2 }}>{slot ? 'Edit Slot' : 'Add Slot'}</h3>
+            <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+              {day_} {timeSlot ? `· ${timeSlot.replace('|', ' – ')}` : ''}
+            </p>
+          </div>
+          <button className="btn-icon" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)' }} onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Day selector */}
+        <div className="form-group">
+          <label className="form-label">Day *</label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {DAYS.map(d => (
+              <button key={d} type="button" onClick={() => setDay(d)} style={{
+                padding: '5px 12px', borderRadius: 8, fontSize: '0.78rem', fontWeight: 600,
+                cursor: 'pointer', border: 'none',
+                background: day_ === d ? 'var(--color-primary)' : 'var(--color-surface-2)',
+                color: day_ === d ? '#fff' : 'var(--color-text-muted)',
+                transition: 'all 0.15s',
+              }}>
+                {DAY_SHORT[d]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Course / Class selector */}
+        <div className="form-group">
+          <label className="form-label">Course / Class *</label>
+          {myCourses.length === 0 ? (
+            <p style={{ fontSize: '0.82rem', color: 'var(--color-danger)' }}>
+              No courses configured for this faculty.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {myCourses.map((c, i) => {
+                const key = `${c.education_type}|${c.year}|${c.section}`;
+                const col = EDU_COLORS[c.education_type] || '#64748b';
+                return (
+                  <button key={i} type="button" onClick={() => setCourseKey(key)}
+                    style={{
+                      padding: '7px 14px', borderRadius: 8, fontSize: '0.82rem', fontWeight: 600,
+                      cursor: 'pointer',
+                      background: courseKey === key ? `${col}22` : 'var(--color-surface-2)',
+                      color: courseKey === key ? col : 'var(--color-text)',
+                      border: `1.5px solid ${courseKey === key ? col : 'var(--color-border)'}`,
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {c.education_type} · Yr {c.year} · {c.section}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Time slot selector */}
+        {blockId && (
+          <div className="form-group">
+            <label className="form-label">Time Slot *</label>
+            {targetPeriod ? (
+              (() => {
+                const matched = (selectedBlock?.slots || []).find(s => 
+                  !isBreakSlot(s) && getPeriodNumber(s.from_time, selectedBlock?.education_type) === targetPeriod
+                );
+                return matched ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      padding: '8px 16px',
+                      background: 'rgba(6, 182, 212, 0.08)',
+                      border: '1px solid rgba(6, 182, 212, 0.3)',
+                      borderRadius: 8,
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      color: '#0891b2',
+                      fontFamily: 'monospace',
+                    }}>
+                      {formatTime12h(matched.from_time)} – {formatTime12h(matched.to_time)} (Period {targetPeriod})
+                    </div>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                      (Extracted automatically for Period {targetPeriod})
+                    </span>
+                  </div>
+                ) : (
+                  <select className="input" value={timeSlot} onChange={e => setTimeSlot(e.target.value)}>
+                    <option value="">— Select Time Slot —</option>
+                    {availableSlots.map((s, idx) => (
+                      <option key={idx} value={`${s.from_time}|${s.to_time}`}>
+                        {formatTime12h(s.from_time)} – {formatTime12h(s.to_time)}
+                      </option>
+                    ))}
+                  </select>
+                );
+              })()
+            ) : (
+              <select className="input" value={timeSlot} onChange={e => setTimeSlot(e.target.value)}>
+                <option value="">— Select Time Slot —</option>
+                {availableSlots.map((s, idx) => (
+                  <option key={idx} value={`${s.from_time}|${s.to_time}`}>
+                    {formatTime12h(s.from_time)} – {formatTime12h(s.to_time)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
+        {/* Subject selector */}
+        {courseKey && (
+          <div className="form-group">
+            <label className="form-label">Subject *</label>
+            <select className="input" value={subjectId} onChange={e => setSubjectId(e.target.value)}>
+              <option value="">— Select Subject —</option>
+              {filteredSubjects.map((s, idx) => (
+                <option key={idx} value={s.subject_id || s.id}>
+                  {s.subject_code} – {s.subject_name} ({s.subject_type})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 24, borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 size={14} className="spinner" /> : <Save size={14} />} Save Slot
           </button>
         </div>
       </div>

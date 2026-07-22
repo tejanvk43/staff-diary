@@ -179,21 +179,6 @@ CREATE TABLE IF NOT EXISTS diary_logs (
   CONSTRAINT fk_dl_employee FOREIGN KEY (employee_id) REFERENCES users(employee_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- 11. attendance
--- ============================================================
-CREATE TABLE IF NOT EXISTS attendance (
-  id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  employee_id      VARCHAR(20)  NOT NULL,
-  attendance_date  DATE         NOT NULL,
-  check_in         DATETIME     DEFAULT NULL,
-  check_out        DATETIME     DEFAULT NULL,
-  status           ENUM('Present','Absent','Leave','OD','Holiday') NOT NULL DEFAULT 'Present',
-  remarks          TEXT         DEFAULT NULL,
-  created_at       TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_attendance (employee_id, attendance_date),
-  CONSTRAINT fk_att_employee FOREIGN KEY (employee_id) REFERENCES users(employee_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
 -- 12. notifications

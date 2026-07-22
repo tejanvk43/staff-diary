@@ -66,4 +66,13 @@ router.post('/subject-types',        role('Admin'), ctrl.addSubjectType);
 router.put('/subject-types/:id',     role('Admin'), ctrl.updateSubjectType);
 router.delete('/subject-types/:id',  role('Admin'), ctrl.deleteSubjectType);
 
+// Bank details requests
+router.get('/bank-requests',             role('Admin'), ctrl.listBankRequests);
+router.post('/bank-requests/:id/review', role('Admin'), ctrl.reviewBankRequest);
+
+// User management enhancements (export, details, timetable override)
+router.get('/users/export',               role('Admin'), ctrl.exportUsers);
+router.get('/users/:employee_id/full',     role('Admin', 'HOD'), ctrl.getUserFullDetails);
+router.put('/users/:employee_id/timetable', role('Admin'), ctrl.adminUpdateUserTimetable);
+
 module.exports = router;

@@ -7,7 +7,6 @@ import AppLayout from '../../components/AppLayout';
 
 const REPORT_TYPES = [
   { key: 'diary',       label: 'Diary Report',      endpoint: '/api/reports/diary' },
-  { key: 'attendance',  label: 'Attendance Report',  endpoint: '/api/reports/attendance' },
   { key: 'leave',       label: 'Leave Report',       endpoint: '/api/reports/leave' },
   { key: 'conflicts',   label: 'Conflict Report',    endpoint: '/api/reports/conflicts' },
   { key: 'unassigned',  label: 'Unassigned Classes', endpoint: '/api/reports/unassigned' },

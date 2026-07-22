@@ -6,7 +6,6 @@ const ctrl    = require('../controllers/reportsController');
 router.use(auth);
 
 router.get('/diary',       ctrl.diaryReport);
-router.get('/attendance',  ctrl.attendanceReport);
 router.get('/leave',       ctrl.leaveReport);
 router.get('/conflicts',   ctrl.conflictReport);
 router.get('/unassigned',  ctrl.unassignedReport);

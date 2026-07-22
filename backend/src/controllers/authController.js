@@ -32,6 +32,8 @@ async function login(req, res) {
       full_name:   user.full_name,
       department:  user.department,
       short_name:  user.short_name,
+      highest_qualification: user.highest_qualification,
+      bank_details_submitted: user.bank_details_submitted,
     };
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
@@ -40,7 +42,7 @@ async function login(req, res) {
       success: true,
       data: {
         token,
-        user: { ...payload, is_first_login: user.is_first_login },
+        user: { ...payload, is_first_login: user.is_first_login, bank_details_submitted: user.bank_details_submitted },
       },
     });
   } catch (err) {
@@ -93,7 +95,7 @@ async function changePassword(req, res) {
 async function me(req, res) {
   try {
     const [rows] = await pool.query(
-      'SELECT employee_id, full_name, short_name, education_type, department, designation, phone_number, email, role, is_first_login, created_at FROM users WHERE employee_id = ?',
+      'SELECT employee_id, full_name, short_name, highest_qualification, department, designation, phone_number, bank_name, bank_account_no, bank_ifsc, bank_details_submitted, email, role, is_first_login, created_at FROM users WHERE employee_id = ?',
       [req.user.employee_id]
     );
     if (rows.length === 0) {

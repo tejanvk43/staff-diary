@@ -69,6 +69,9 @@ async function getPending(req, res) {
 
 // ─── PUT /api/admin/approvals/leave/:id ──────────────────────────────────────
 async function approveLeave(req, res) {
+  if (req.user.role !== 'Admin') {
+    return res.status(403).json({ success: false, message: 'Forbidden. HOD cannot approve requests.' });
+  }
   const { status, remarks } = req.body;
   const { employee_id: adminId } = req.user;
 
@@ -98,6 +101,9 @@ async function approveLeave(req, res) {
 
 // ─── PUT /api/admin/approvals/od/:id ─────────────────────────────────────────
 async function approveOD(req, res) {
+  if (req.user.role !== 'Admin') {
+    return res.status(403).json({ success: false, message: 'Forbidden. HOD cannot approve requests.' });
+  }
   const { status, remarks } = req.body;
   const { employee_id: adminId } = req.user;
 
@@ -127,6 +133,9 @@ async function approveOD(req, res) {
 
 // ─── PUT /api/admin/approvals/extra/:id ──────────────────────────────────────
 async function approveExtra(req, res) {
+  if (req.user.role !== 'Admin') {
+    return res.status(403).json({ success: false, message: 'Forbidden. HOD cannot approve requests.' });
+  }
   const { status, remarks } = req.body;
   const { employee_id: adminId } = req.user;
 
@@ -155,6 +164,9 @@ async function approveExtra(req, res) {
 
 // ─── PUT /api/admin/approvals/change-request/:id ─────────────────────────────
 async function approveChangeRequest(req, res) {
+  if (req.user.role !== 'Admin') {
+    return res.status(403).json({ success: false, message: 'Forbidden. HOD cannot approve requests.' });
+  }
   const { status, remarks } = req.body;
   const { employee_id: adminId } = req.user;
 
@@ -194,6 +206,9 @@ async function approveChangeRequest(req, res) {
 
 // ─── PUT /api/admin/approvals/diary/:id ──────────────────────────────────────
 async function approveDiary(req, res) {
+  if (req.user.role !== 'Admin') {
+    return res.status(403).json({ success: false, message: 'Forbidden. HOD cannot approve requests.' });
+  }
   const { status, remarks } = req.body;
   const { employee_id: adminId } = req.user;
 

@@ -44,47 +44,6 @@ async function diaryReport(req, res) {
   }
 }
 
-// ─── GET /api/reports/attendance ─────────────────────────────────────────────
-async function attendanceReport(req, res) {
-  const { employee_id: selfId, role, department } = req.user;
-  const { employee_id, from_date, to_date, format } = req.query;
-
-  try {
-    const targetId = role === 'Faculty' ? selfId : (employee_id || null);
-
-    let sql = `SELECT a.*, u.full_name, u.department FROM attendance a
-               JOIN users u ON a.employee_id = u.employee_id
-               WHERE a.attendance_date BETWEEN ? AND ?`;
-    const params = [from_date || '2024-01-01', to_date || '2099-12-31'];
-
-    if (targetId) { sql += ' AND a.employee_id = ?'; params.push(targetId); }
-    else if (role === 'HOD') { sql += ' AND u.department = ?'; params.push(department); }
-
-    sql += ' ORDER BY a.attendance_date ASC';
-    const [rows] = await pool.query(sql, params);
-
-    const summary = rows.reduce((acc, r) => {
-      if (!acc[r.employee_id]) {
-        acc[r.employee_id] = { full_name: r.full_name, department: r.department, Present: 0, Absent: 0, Leave: 0, OD: 0, Holiday: 0 };
-      }
-      acc[r.employee_id][r.status] = (acc[r.employee_id][r.status] || 0) + 1;
-      return acc;
-    }, {});
-
-    if (format === 'excel') {
-      const data = Object.entries(summary).map(([id, s]) => ({ Employee_ID: id, ...s }));
-      const buffer = generateExcelBuffer(data, 'Attendance Summary');
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.xlsx"');
-      return res.send(buffer);
-    }
-
-    return res.json({ success: true, data: { summary: Object.entries(summary).map(([id, s]) => ({ employee_id: id, ...s })), daily: rows } });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Server error.' });
-  }
-}
-
 // ─── GET /api/reports/leave ───────────────────────────────────────────────────
 async function leaveReport(req, res) {
   const { employee_id: selfId, role, department } = req.user;
@@ -263,4 +222,4 @@ async function unassignedReport(req, res) {
   }
 }
 
-module.exports = { diaryReport, attendanceReport, leaveReport, conflictReport, unassignedReport };
+module.exports = { diaryReport, leaveReport, conflictReport, unassignedReport };

@@ -2,48 +2,32 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  Loader2, Plus, Trash2, Check, X, AlertCircle
+  Loader2, Plus, Trash2, Check, AlertCircle
 } from 'lucide-react';
 import api from '../../api/axios';
 import AppLayout from '../../components/AppLayout';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function FacultySetupPage({ onComplete }) {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const [dbPrograms, setDbPrograms] = useState([]);
   const [programmes, setProgrammes] = useState({});
-  const [assignments, setAssignments] = useState([]);
+  
+  // Split assignments into course blocks and subjects
+  const [courseAssignments, setCourseAssignments] = useState([]);
+  const [subjectAssignments, setSubjectAssignments] = useState([]);
 
   const [allSections, setAllSections] = useState([]);
   const [allSubjects, setAllSubjects] = useState([]);
-  const [assignedBlocks, setAssignedBlocks] = useState([]); // Loaded from admin block assignments
-  const [allBlocks, setAllBlocks] = useState([]); // Loaded all block timetables in the system
+  const [assignedBlocks, setAssignedBlocks] = useState([]); 
+  const [allBlocks, setAllBlocks] = useState([]); 
   const [otherWorks, setOtherWorks] = useState([]);
 
-  // Filter available options based on checked checkboxes
   const allowedPrograms = Object.keys(programmes).filter(p => programmes[p]);
-  const activeProgramsChecked = allowedPrograms;
-
-  // Auto-default the program field for all rows if only one program is checked
-  useEffect(() => {
-    if (allowedPrograms.length === 1) {
-      const singleProg = allowedPrograms[0];
-      setAssignments(prev => prev.map(a => {
-        if (a.program !== singleProg) {
-          return {
-            ...a,
-            program: singleProg,
-            year: '',
-            sectionId: '',
-            subjectId: ''
-          };
-        }
-        return a;
-      }));
-    }
-  }, [programmes]);
 
   // Load setup data
   useEffect(() => {
@@ -80,51 +64,38 @@ export default function FacultySetupPage({ onComplete }) {
         }
         setProgrammes(pgMap);
 
-        // 2. Reconstruct assignments rows
-        const loadedAssignments = [];
-        if (b.length) {
+        // 2. Reconstruct Course Assignments
+        const loadedCourses = [];
+        if (c.length) {
           c.forEach(course => {
-            // Find if this course matches an assigned block
-            const block = b.find(blk =>
-              blk.education_type === course.education_type &&
-              Number(blk.year) === Number(course.year) &&
-              blk.section === course.section
-            );
-
-            const matchingSubjects = s.filter(subj =>
-              subj.education_type === course.education_type &&
-              Number(subj.year) === Number(course.year)
-            );
-
-            if (block && matchingSubjects.length > 0) {
-              matchingSubjects.forEach(subj => {
-                loadedAssignments.push({
-                  id: Math.random(),
-                  program: course.education_type,
-                  year: course.year,
-                  sectionId: course.section_id,
-                  subjectId: subj.subject_id
-                });
-              });
-            } else if (block) {
-              loadedAssignments.push({
-                id: Math.random(),
-                program: course.education_type,
-                year: course.year,
-                sectionId: course.section_id,
-                subjectId: ''
-              });
-            }
+            loadedCourses.push({
+              id: Math.random(),
+              program: course.education_type,
+              year: course.year,
+              sectionId: course.section_id
+            });
           });
-          setAssignments(loadedAssignments.length > 0 ? loadedAssignments : [
-            { id: Math.random(), program: '', year: '', sectionId: '', subjectId: '' }
-          ]);
-        } else {
-          // If no existing assigned blocks, show empty row
-          setAssignments([
-            { id: Math.random(), program: '', year: '', sectionId: '', subjectId: '' }
-          ]);
         }
+        setCourseAssignments(loadedCourses.length ? loadedCourses : [
+          { id: Math.random(), program: '', year: '', sectionId: '' }
+        ]);
+
+        // 3. Reconstruct Subject Assignments
+        const loadedSubjects = [];
+        if (s.length) {
+          s.forEach(subj => {
+            loadedSubjects.push({
+              id: Math.random(),
+              program: subj.education_type,
+              year: subj.year,
+              subjectId: subj.subject_id
+            });
+          });
+        }
+        setSubjectAssignments(loadedSubjects.length ? loadedSubjects : [
+          { id: Math.random(), program: '', year: '', subjectId: '' }
+        ]);
+
       } catch (err) {
         toast.error('Failed to load setup parameters.');
       } finally {
@@ -137,58 +108,85 @@ export default function FacultySetupPage({ onComplete }) {
   const handleProgChange = (prog) => {
     setProgrammes(prev => {
       const next = { ...prev, [prog]: !prev[prog] };
-      // If program is unchecked, remove any rows matching this program
+      // Clear selections for unchecked programs
       if (!next[prog]) {
-        setAssignments(curr => {
+        setCourseAssignments(curr => {
           const filtered = curr.filter(a => a.program !== prog);
-          return filtered.length > 0 ? filtered : [
-            { id: Math.random(), program: '', year: '', sectionId: '', subjectId: '' }
-          ];
+          return filtered.length > 0 ? filtered : [{ id: Math.random(), program: '', year: '', sectionId: '' }];
+        });
+        setSubjectAssignments(curr => {
+          const filtered = curr.filter(a => a.program !== prog);
+          return filtered.length > 0 ? filtered : [{ id: Math.random(), program: '', year: '', subjectId: '' }];
         });
       }
       return next;
     });
   };
 
-  const addRow = () => {
-    setAssignments(prev => [
+  // Course Rows Methods
+  const addCourseRow = () => {
+    setCourseAssignments(prev => [
       ...prev,
       {
         id: Math.random(),
         program: allowedPrograms.length === 1 ? allowedPrograms[0] : '',
         year: '',
-        sectionId: '',
+        sectionId: ''
+      }
+    ]);
+  };
+
+  const removeCourseRow = (id) => {
+    setCourseAssignments(prev => {
+      const next = prev.filter(a => a.id !== id);
+      return next.length > 0 ? next : [{ id: Math.random(), program: '', year: '', sectionId: '' }];
+    });
+  };
+
+  const updateCourseAssignment = (id, field, value) => {
+    setCourseAssignments(prev => prev.map(a => {
+      if (a.id === id) {
+        const updated = { ...a, [field]: value };
+        if (field === 'program') {
+          updated.year = '';
+          updated.sectionId = '';
+        } else if (field === 'year') {
+          updated.sectionId = '';
+        }
+        return updated;
+      }
+      return a;
+    }));
+  };
+
+  // Subject Rows Methods
+  const addSubjectRow = () => {
+    setSubjectAssignments(prev => [
+      ...prev,
+      {
+        id: Math.random(),
+        program: allowedPrograms.length === 1 ? allowedPrograms[0] : '',
+        year: '',
         subjectId: ''
       }
     ]);
   };
 
-  const removeRow = (id) => {
-    setAssignments(prev => {
+  const removeSubjectRow = (id) => {
+    setSubjectAssignments(prev => {
       const next = prev.filter(a => a.id !== id);
-      return next.length > 0 ? next : [
-        {
-          id: Math.random(),
-          program: allowedPrograms.length === 1 ? allowedPrograms[0] : '',
-          year: '',
-          sectionId: '',
-          subjectId: ''
-        }
-      ];
+      return next.length > 0 ? next : [{ id: Math.random(), program: '', year: '', subjectId: '' }];
     });
   };
 
-  const updateAssignment = (id, field, value) => {
-    setAssignments(prev => prev.map(a => {
+  const updateSubjectAssignment = (id, field, value) => {
+    setSubjectAssignments(prev => prev.map(a => {
       if (a.id === id) {
         const updated = { ...a, [field]: value };
-        // Reset cascading values if parent selections change
         if (field === 'program') {
           updated.year = '';
-          updated.sectionId = '';
           updated.subjectId = '';
         } else if (field === 'year') {
-          updated.sectionId = '';
           updated.subjectId = '';
         }
         return updated;
@@ -197,6 +195,7 @@ export default function FacultySetupPage({ onComplete }) {
     }));
   };
 
+  // Other Works Rows Methods
   const addOtherRow = () => {
     setOtherWorks(prev => [
       ...prev,
@@ -219,9 +218,15 @@ export default function FacultySetupPage({ onComplete }) {
       return;
     }
 
-    const invalid = assignments.some(a => !a.program || !a.year || !a.sectionId || !a.subjectId);
-    if (invalid) {
-      toast.error('Please complete all dropdown selections or remove empty rows.');
+    const invalidCourse = courseAssignments.some(a => !a.program || !a.year || !a.sectionId);
+    if (invalidCourse) {
+      toast.error('Please complete all dropdown selections in Classes table or remove empty rows.');
+      return;
+    }
+
+    const invalidSubject = subjectAssignments.some(a => !a.program || !a.year || !a.subjectId);
+    if (invalidSubject) {
+      toast.error('Please complete all dropdown selections in Subjects table or remove empty rows.');
       return;
     }
 
@@ -237,29 +242,11 @@ export default function FacultySetupPage({ onComplete }) {
       }
     }
 
-    // Check overlaps between other works
-    for (let i = 0; i < otherWorks.length; i++) {
-      const ow1 = otherWorks[i];
-      for (let j = i + 1; j < otherWorks.length; j++) {
-        const ow2 = otherWorks[j];
-        if (ow1.day === ow2.day) {
-          const s1 = ow1.from_time.slice(0, 5);
-          const e1 = ow1.to_time.slice(0, 5);
-          const s2 = ow2.from_time.slice(0, 5);
-          const e2 = ow2.to_time.slice(0, 5);
-          if (s1 < e2 && s2 < e1) {
-            toast.error(`Conflict: "${ow1.duty_name}" overlaps with "${ow2.duty_name}" on ${ow1.day}.`);
-            return;
-          }
-        }
-      }
-    }
-
     setSaving(true);
 
     // Group rows into unique courses
     const courseMap = {};
-    assignments.forEach(a => {
+    courseAssignments.forEach(a => {
       const sec = allSections.find(s => s.id === Number(a.sectionId));
       if (sec) {
         const key = `${a.program}|${a.year}|${sec.section_name}`;
@@ -274,9 +261,9 @@ export default function FacultySetupPage({ onComplete }) {
     const compiledCourses = Object.values(courseMap);
 
     // Unique subject IDs
-    const compiledSubjectIds = [...new Set(assignments.map(a => Number(a.subjectId)))];
+    const compiledSubjectIds = [...new Set(subjectAssignments.map(a => Number(a.subjectId)))];
 
-    // Build the final block IDs by matching the courses against all block timetables
+    // Build the final block IDs
     const finalBlockIds = [];
     compiledCourses.forEach(c => {
       const match = allBlocks.find(b =>
@@ -330,7 +317,7 @@ export default function FacultySetupPage({ onComplete }) {
           Faculty Setup
         </h2>
         <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
-          Select the subjects you teach for each assigned class block.
+          Configure the classes you teach, the subjects assigned to you, and your other weekly work.
         </p>
       </div>
 
@@ -379,183 +366,246 @@ export default function FacultySetupPage({ onComplete }) {
         </div>
       </div>
 
-      {/* Box 2: Table Section */}
-      <div className="card" style={{ padding: '24px 28px', marginBottom: 24 }}>
-        {activeProgramsChecked.length === 0 ? (
-          <div className="empty-state" style={{ padding: '40px 20px' }}>
-            <AlertCircle size={36} style={{ color: 'var(--color-text-subtle)', marginBottom: 8 }} />
-            <h3 style={{ fontWeight: 600, marginBottom: 4 }}>Select a programme first</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-              Check your programmes above to configure your class entries.
-            </p>
-          </div>
-        ) : allBlocks.length === 0 ? (
-          <div className="empty-state" style={{ padding: '40px 20px' }}>
-            <AlertCircle size={36} style={{ color: 'var(--color-danger)', marginBottom: 8 }} />
-            <h3 style={{ fontWeight: 600, marginBottom: 4 }}>No Block Timetables Configured</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', maxWidth: 440 }}>
-              No class block timetables have been created in the system yet. Please ask the administrator to create block timetables.
-            </p>
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto', margin: '0 -28px', padding: '0 28px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'none' }}>
-                  <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 64, padding: '10px 8px', fontWeight: 700 }}>S.No</th>
-                  <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 150, padding: '10px 8px', fontWeight: 700 }}>Program</th>
-                  <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 120, padding: '10px 8px', fontWeight: 700 }}>Year</th>
-                  <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 120, padding: '10px 8px', fontWeight: 700 }}>Section</th>
-                  <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', padding: '10px 8px', fontWeight: 700 }}>Subjects</th>
-                  <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 70, padding: '10px 8px', textAlign: 'center', fontWeight: 700 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {assignments.map((row, idx) => {
-                  const selectedProg = dbPrograms.find(p => p.name === row.program);
-                  const yearsConfig = selectedProg?.years || [];
+      {allowedPrograms.length > 0 && allBlocks.length > 0 && (
+        <>
+          {/* Box 2: Classes You Teach */}
+          <div className="card" style={{ padding: '24px 28px', marginBottom: 24 }}>
+            <div style={{ marginBottom: 12 }}>
+              <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--color-text)' }}>
+                Classes/Sections You Teach:
+              </span>
+            </div>
+            <div style={{ overflowX: 'auto', margin: '0 -28px', padding: '0 28px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'none' }}>
+                    <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 64, padding: '10px 8px', fontWeight: 700 }}>S.No</th>
+                    <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 180, padding: '10px 8px', fontWeight: 700 }}>Program</th>
+                    <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 180, padding: '10px 8px', fontWeight: 700 }}>Year</th>
+                    <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', padding: '10px 8px', fontWeight: 700 }}>Section</th>
+                    <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 70, padding: '10px 8px', textAlign: 'center', fontWeight: 700 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {courseAssignments.map((row, idx) => {
+                    const selectedProg = dbPrograms.find(p => p.name === row.program);
+                    const yearsConfig = selectedProg?.years || [];
 
-                  // Years available in block timetables for the selected program
-                  const allowedYears = [...new Set(allBlocks
-                    .filter(b => b.education_type === row.program)
-                    .map(b => Number(b.year))
-                  )].sort();
+                    const allowedYears = [...new Set(allBlocks
+                      .filter(b => b.education_type === row.program)
+                      .map(b => Number(b.year))
+                    )].sort();
 
-                  // Sections available in block timetables for the selected program and year
-                  const allowedSecNames = allBlocks
-                    .filter(b => b.education_type === row.program && Number(b.year) === Number(row.year))
-                    .map(b => b.section);
+                    const allowedSecNames = allBlocks
+                      .filter(b => b.education_type === row.program && Number(b.year) === Number(row.year))
+                      .map(b => b.section);
 
-                  const sections = allSections.filter(s =>
-                    s.education_type === row.program &&
-                    Number(s.year) === Number(row.year) &&
-                    (allowedSecNames.includes(s.section_name) || allowedSecNames.includes(null) || allowedSecNames.includes(''))
-                  );
+                    const sections = allSections.filter(s =>
+                      s.education_type === row.program &&
+                      Number(s.year) === Number(row.year) &&
+                      (allowedSecNames.includes(s.section_name) || allowedSecNames.includes(null) || allowedSecNames.includes(''))
+                    );
 
-                  // Subjects available for this program and year
-                  const subjects = allSubjects.filter(s =>
-                    s.education_type === row.program &&
-                    Number(s.year) === Number(row.year)
-                  );
-
-                  return (
-                    <tr key={row.id} style={{ background: 'none' }} className="fade-in">
-                      {/* S.No */}
-                      <td style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--color-text-muted)', verticalAlign: 'middle' }}>
-                        {idx + 1}
-                      </td>
-
-                      {/* Program (default to text if single, dropdown if multiple) */}
-                      <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
-                        {allowedPrograms.length === 1 ? (
-                          <div style={{ padding: '8px 10px', fontWeight: 700, fontSize: '0.85rem', color: 'var(--color-text)' }}>
-                            {allowedPrograms[0]}
-                          </div>
-                        ) : (
+                    return (
+                      <tr key={row.id} style={{ background: 'none' }}>
+                        <td style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--color-text-muted)', verticalAlign: 'middle' }}>
+                          {idx + 1}
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          {allowedPrograms.length === 1 ? (
+                            <div style={{ padding: '8px 10px', fontWeight: 700, fontSize: '0.85rem' }}>
+                              {allowedPrograms[0]}
+                            </div>
+                          ) : (
+                            <select
+                              className="input"
+                              style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                              value={row.program}
+                              onChange={e => updateCourseAssignment(row.id, 'program', e.target.value)}
+                            >
+                              <option value="">— Select —</option>
+                              {allowedPrograms.map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
                           <select
                             className="input"
-                            style={{ padding: '8px 10px', fontSize: '0.85rem', fontWeight: 500 }}
-                            value={row.program}
-                            onChange={e => updateAssignment(row.id, 'program', e.target.value)}
+                            style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                            value={row.year}
+                            disabled={!row.program}
+                            onChange={e => updateCourseAssignment(row.id, 'year', e.target.value)}
                           >
                             <option value="">— Select —</option>
-                            {allowedPrograms.map(p => (
-                              <option key={p} value={p}>{p}</option>
+                            {allowedYears.map(y => {
+                              const config = yearsConfig.find(yc => yc.year_number === y);
+                              return (
+                                <option key={y} value={y}>{config ? config.year_name : `Year ${y}`}</option>
+                              );
+                            })}
+                          </select>
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          <select
+                            className="input"
+                            style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                            value={row.sectionId}
+                            disabled={!row.year}
+                            onChange={e => updateCourseAssignment(row.id, 'sectionId', e.target.value)}
+                          >
+                            <option value="">— Select Section —</option>
+                            {sections.map(s => (
+                              <option key={s.id} value={s.id}>
+                                {s.section_name} {s.department ? `(${s.department})` : ''}
+                              </option>
                             ))}
                           </select>
-                        )}
-                      </td>
-
-                      {/* Year (only allow admin-assigned years for this program) */}
-                      <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
-                        <select
-                          className="input"
-                          style={{ padding: '8px 10px', fontSize: '0.85rem', fontWeight: 500 }}
-                          value={row.year}
-                          disabled={!row.program}
-                          onChange={e => updateAssignment(row.id, 'year', e.target.value)}
-                        >
-                          <option value="">— Select —</option>
-                          {allowedYears.map(y => {
-                            const config = yearsConfig.find(yc => yc.year_number === y);
-                            return (
-                              <option key={y} value={y}>{config ? config.year_name : `Year ${y}`}</option>
-                            );
-                          })}
-                        </select>
-                      </td>
-
-                      {/* Section (only allow admin-assigned sections for this program and year) */}
-                      <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
-                        <select
-                          className="input"
-                          style={{ padding: '8px 10px', fontSize: '0.85rem', fontWeight: 500 }}
-                          value={row.sectionId}
-                          disabled={!row.year}
-                          onChange={e => updateAssignment(row.id, 'sectionId', e.target.value)}
-                        >
-                          <option value="">— Select —</option>
-                          {sections.map(s => (
-                            <option key={s.id} value={s.id}>{s.section_name}</option>
-                          ))}
-                        </select>
-                      </td>
-
-                      {/* Subjects */}
-                      <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
-                        <select
-                          className="input"
-                          style={{ padding: '8px 10px', fontSize: '0.85rem', fontWeight: 500 }}
-                          value={row.subjectId}
-                          disabled={!row.sectionId}
-                          onChange={e => updateAssignment(row.id, 'subjectId', e.target.value)}
-                        >
-                          <option value="">— Select Subject —</option>
-                          {subjects.map(s => (
-                            <option key={s.id} value={s.id}>{s.subject_code} – {s.subject_name} ({s.subject_type})</option>
-                          ))}
-                        </select>
-                      </td>
-
-                      {/* Action */}
-                      <td style={{ padding: '10px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
-                        <button
-                          type="button"
-                          className="btn-icon"
-                          onClick={() => removeRow(row.id)}
-                          style={{
-                            background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger)',
-                            border: '1px solid rgba(239,68,68,0.2)', padding: 7, cursor: 'pointer'
-                          }}
-                          title="Remove row"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-
-            {/* Add Row Button */}
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={addRow}
-              style={{
-                width: '100%', justifyContent: 'center', marginTop: 16,
-                border: '2px dashed var(--color-border-dark)', background: 'var(--color-surface-2)',
-                color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6
-              }}
-            >
-              <Plus size={14} /> Add Row
-            </button>
+                        </td>
+                        <td style={{ padding: '10px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            onClick={() => removeCourseRow(row.id)}
+                            style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger)', border: '1px solid rgba(239,68,68,0.2)', padding: 7 }}
+                            title="Remove row"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={addCourseRow}
+                style={{ width: '100%', justifyContent: 'center', marginTop: 16, border: '2px dashed var(--color-border-dark)', background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <Plus size={14} /> Add Class Row
+              </button>
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Box 3: Other Works Section */}
+          {/* Box 3: Subjects You Teach */}
+          <div className="card" style={{ padding: '24px 28px', marginBottom: 24 }}>
+            <div style={{ marginBottom: 12 }}>
+              <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--color-text)' }}>
+                Subjects You Teach:
+              </span>
+            </div>
+            <div style={{ overflowX: 'auto', margin: '0 -28px', padding: '0 28px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'none' }}>
+                    <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 64, padding: '10px 8px', fontWeight: 700 }}>S.No</th>
+                    <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 180, padding: '10px 8px', fontWeight: 700 }}>Program</th>
+                    <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 180, padding: '10px 8px', fontWeight: 700 }}>Year</th>
+                    <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', padding: '10px 8px', fontWeight: 700 }}>Subject</th>
+                    <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 70, padding: '10px 8px', textAlign: 'center', fontWeight: 700 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subjectAssignments.map((row, idx) => {
+                    const selectedProg = dbPrograms.find(p => p.name === row.program);
+                    const yearsConfig = selectedProg?.years || [];
+
+                    const allowedYears = [...new Set(allBlocks
+                      .filter(b => b.education_type === row.program)
+                      .map(b => Number(b.year))
+                    )].sort();
+
+                    const subjects = allSubjects.filter(s =>
+                      s.education_type === row.program &&
+                      Number(s.year) === Number(row.year)
+                    );
+
+                    return (
+                      <tr key={row.id} style={{ background: 'none' }}>
+                        <td style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--color-text-muted)', verticalAlign: 'middle' }}>
+                          {idx + 1}
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          {allowedPrograms.length === 1 ? (
+                            <div style={{ padding: '8px 10px', fontWeight: 700, fontSize: '0.85rem' }}>
+                              {allowedPrograms[0]}
+                            </div>
+                          ) : (
+                            <select
+                              className="input"
+                              style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                              value={row.program}
+                              onChange={e => updateSubjectAssignment(row.id, 'program', e.target.value)}
+                            >
+                              <option value="">— Select —</option>
+                              {allowedPrograms.map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          <select
+                            className="input"
+                            style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                            value={row.year}
+                            disabled={!row.program}
+                            onChange={e => updateSubjectAssignment(row.id, 'year', e.target.value)}
+                          >
+                            <option value="">— Select —</option>
+                            {allowedYears.map(y => {
+                              const config = yearsConfig.find(yc => yc.year_number === y);
+                              return (
+                                <option key={y} value={y}>{config ? config.year_name : `Year ${y}`}</option>
+                              );
+                            })}
+                          </select>
+                        </td>
+                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                          <select
+                            className="input"
+                            style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                            value={row.subjectId}
+                            disabled={!row.year}
+                            onChange={e => updateSubjectAssignment(row.id, 'subjectId', e.target.value)}
+                          >
+                            <option value="">— Select Subject —</option>
+                            {subjects.map(s => (
+                              <option key={s.id} value={s.id}>
+                                {s.subject_code} – {s.subject_name} ({s.subject_type}) {s.branch_sname ? `[${s.branch_sname}]` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: '10px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            onClick={() => removeSubjectRow(row.id)}
+                            style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger)', border: '1px solid rgba(239,68,68,0.2)', padding: 7 }}
+                            title="Remove row"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={addSubjectRow}
+                style={{ width: '100%', justifyContent: 'center', marginTop: 16, border: '2px dashed var(--color-border-dark)', background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <Plus size={14} /> Add Subject Row
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Box 4: Other Works Section */}
       <div className="card" style={{ padding: '24px 28px', marginBottom: 24 }}>
         <div style={{ marginBottom: 16 }}>
           <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-text)' }}>
@@ -576,16 +626,14 @@ export default function FacultySetupPage({ onComplete }) {
             </thead>
             <tbody>
               {otherWorks.map((row, idx) => (
-                <tr key={row.id} style={{ background: 'none' }} className="fade-in">
-                  {/* S.No */}
+                <tr key={row.id} style={{ background: 'none' }}>
                   <td style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--color-text-muted)', verticalAlign: 'middle' }}>
                     {idx + 1}
                   </td>
-                  {/* Day */}
                   <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
                     <select
                       className="input"
-                      style={{ padding: '8px 10px', fontSize: '0.85rem', fontWeight: 500 }}
+                      style={{ padding: '8px 10px', fontSize: '0.85rem' }}
                       value={row.day}
                       onChange={e => updateOtherRow(row.id, 'day', e.target.value)}
                     >
@@ -597,7 +645,6 @@ export default function FacultySetupPage({ onComplete }) {
                       <option value="Saturday">Saturday</option>
                     </select>
                   </td>
-                  {/* From Time */}
                   <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
                     <input
                       type="time"
@@ -607,7 +654,6 @@ export default function FacultySetupPage({ onComplete }) {
                       onChange={e => updateOtherRow(row.id, 'from_time', e.target.value)}
                     />
                   </td>
-                  {/* To Time */}
                   <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
                     <input
                       type="time"
@@ -617,7 +663,6 @@ export default function FacultySetupPage({ onComplete }) {
                       onChange={e => updateOtherRow(row.id, 'to_time', e.target.value)}
                     />
                   </td>
-                  {/* Duty Name */}
                   <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
                     <input
                       type="text"
@@ -628,16 +673,12 @@ export default function FacultySetupPage({ onComplete }) {
                       onChange={e => updateOtherRow(row.id, 'duty_name', e.target.value)}
                     />
                   </td>
-                  {/* Action */}
                   <td style={{ padding: '10px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
                     <button
                       type="button"
                       className="btn-icon"
                       onClick={() => removeOtherRow(row.id)}
-                      style={{
-                        background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger)',
-                        border: '1px solid rgba(239,68,68,0.2)', padding: 7, cursor: 'pointer'
-                      }}
+                      style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger)', border: '1px solid rgba(239,68,68,0.2)', padding: 7 }}
                       title="Remove row"
                     >
                       <Trash2 size={15} />
@@ -658,11 +699,7 @@ export default function FacultySetupPage({ onComplete }) {
             type="button"
             className="btn btn-secondary"
             onClick={addOtherRow}
-            style={{
-              width: '100%', justifyContent: 'center', marginTop: 16,
-              border: '2px dashed var(--color-border-dark)', background: 'var(--color-surface-2)',
-              color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6
-            }}
+            style={{ width: '100%', justifyContent: 'center', marginTop: 16, border: '2px dashed var(--color-border-dark)', background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}
           >
             <Plus size={14} /> Add Other Work Row
           </button>
@@ -681,7 +718,7 @@ export default function FacultySetupPage({ onComplete }) {
           id="complete-setup-btn"
           className="btn btn-primary"
           style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-soft))' }}
-          disabled={saving || activeProgramsChecked.length === 0 || allBlocks.length === 0}
+          disabled={saving || allowedPrograms.length === 0 || allBlocks.length === 0}
           onClick={handleSave}
         >
           {saving ? <Loader2 size={14} className="spinner" /> : <Check size={14} />}

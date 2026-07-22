@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { CheckCircle, XCircle, Loader2, X } from 'lucide-react';
 import api from '../../api/axios';
 import AppLayout from '../../components/AppLayout';
+import { useAuth } from '../../hooks/useAuth';
 
 // ─── Approval Action Modal ───────────────────────────────────────────────────
 function ApprovalModal({ item, onClose, onApprove }) {
@@ -93,6 +94,8 @@ function ApprovalModal({ item, onClose, onApprove }) {
 
 // ─── Main Approvals Page — Edit Requests only ────────────────────────────────
 export default function ApprovalsPage() {
+  const { user } = useAuth();
+  const isHod = user?.role === 'HOD';
   const [changes, setChanges] = useState([]);
   const [loading, setLoading]  = useState(true);
   const [selected, setSelected] = useState(null);
@@ -169,7 +172,7 @@ export default function ApprovalsPage() {
                 <tr key={row.id}>
                   {cols.map(c => <td key={c.key}>{c.render ? c.render(row) : row[c.key] ?? '—'}</td>)}
                   <td>
-                    {row.status === 'Pending' && (
+                    {row.status === 'Pending' && !isHod && (
                       <button
                         id={`review-${row.id}-btn`}
                         className="btn btn-sm btn-primary"
@@ -177,6 +180,9 @@ export default function ApprovalsPage() {
                       >
                         Review
                       </button>
+                    )}
+                    {row.status === 'Pending' && isHod && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>Admin Action Required</span>
                     )}
                   </td>
                 </tr>
