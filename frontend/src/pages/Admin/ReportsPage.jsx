@@ -11,6 +11,7 @@ const REPORT_TYPES = [
   { key: 'leave',       label: 'Leave Report',       endpoint: '/api/reports/leave' },
   { key: 'conflicts',   label: 'Conflict Report',    endpoint: '/api/reports/conflicts' },
   { key: 'unassigned',  label: 'Unassigned Classes', endpoint: '/api/reports/unassigned' },
+  { key: 'adjustments', label: 'Class Adjustments',  endpoint: '/api/reports/adjustments' },
 ];
 
 export default function ReportsPage() {

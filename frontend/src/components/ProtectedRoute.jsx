@@ -32,7 +32,9 @@ export default function ProtectedRoute({ children, roles }) {
 
   // Force bank details setup on first login (after password change)
   if (!user.is_first_login && !user.bank_details_submitted && window.location.pathname !== '/bank-details-setup') {
-    return <Navigate to="/bank-details-setup" replace />;
+    if (localStorage.getItem('bank_details_postponed') !== 'true') {
+      return <Navigate to="/bank-details-setup" replace />;
+    }
   }
 
   return children;

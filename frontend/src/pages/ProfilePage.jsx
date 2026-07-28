@@ -97,6 +97,7 @@ export default function ProfilePage() {
     setBankRequestSaving(true);
     try {
       await api.post('/api/admin/users/bank-details/request', {
+        bank_holder_name: bankRequestForm.bank_holder_name || null,
         bank_name: bankRequestForm.bank_name || null,
         bank_account_no: bankRequestForm.bank_account_no || null,
         bank_ifsc: bankRequestForm.bank_ifsc || null,
@@ -104,7 +105,7 @@ export default function ProfilePage() {
       });
       toast.success('Bank details change request submitted to Admin!');
       setShowBankModal(false);
-      setBankRequestForm({ bank_name: '', bank_account_no: '', bank_ifsc: '', reason: '' });
+      setBankRequestForm({ bank_holder_name: '', bank_name: '', bank_account_no: '', bank_ifsc: '', reason: '' });
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to submit request.');
     } finally {
@@ -114,6 +115,7 @@ export default function ProfilePage() {
 
   const openBankRequestModal = () => {
     setBankRequestForm({
+      bank_holder_name: profile?.bank_holder_name || '',
       bank_name:       profile?.bank_name || '',
       bank_account_no: profile?.bank_account_no || '',
       bank_ifsc:       profile?.bank_ifsc || '',
@@ -206,6 +208,7 @@ export default function ProfilePage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
             {[
+              { label: 'Staff Name as in Bank', value: profile?.bank_holder_name || 'Not Filled' },
               { label: 'Bank Name', value: profile?.bank_name || 'Not Filled' },
               { label: 'Account Number', value: profile?.bank_account_no || 'Not Filled' },
               { label: 'IFSC Code', value: profile?.bank_ifsc || 'Not Filled' },
@@ -283,6 +286,15 @@ export default function ProfilePage() {
             </div>
             <form onSubmit={handleBankRequestSubmit}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="req-bank-holder">New Staff Name as in Bank</label>
+                  <input
+                    id="req-bank-holder"
+                    className="input"
+                    value={bankRequestForm.bank_holder_name}
+                    onChange={e => setBankRequestForm(f => ({ ...f, bank_holder_name: e.target.value }))}
+                  />
+                </div>
                 <div className="form-group">
                   <label className="form-label" htmlFor="req-bank-name">New Bank Name</label>
                   <input

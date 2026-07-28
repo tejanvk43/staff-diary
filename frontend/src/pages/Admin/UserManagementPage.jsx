@@ -428,6 +428,7 @@ function BankRequestsModal({ requests, onClose, onReview }) {
               <tbody>
                 {requests.map(r => {
                   const changes = [];
+                  if (r.old_bank_holder_name !== r.new_bank_holder_name) changes.push(`Name: ${r.old_bank_holder_name || 'Empty'} ➔ ${r.new_bank_holder_name}`);
                   if (r.old_bank_name !== r.new_bank_name) changes.push(`Bank: ${r.old_bank_name || 'Empty'} ➔ ${r.new_bank_name}`);
                   if (r.old_bank_account_no !== r.new_bank_account_no) changes.push(`A/C: ${r.old_bank_account_no || 'Empty'} ➔ ${r.new_bank_account_no}`);
                   if (r.old_bank_ifsc !== r.new_bank_ifsc) changes.push(`IFSC: ${r.old_bank_ifsc || 'Empty'} ➔ ${r.new_bank_ifsc}`);

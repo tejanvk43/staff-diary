@@ -20,4 +20,9 @@ router.get('/extra',   ctrl.getExtras);
 // Edit requests (read-only — creation via /api/diary/request-edit)
 router.get('/edit-requests', ctrl.getEditRequests);
 
+// Class Adjustments
+router.post('/adjustment', ctrl.createAdjustment);
+router.get('/adjustment',  ctrl.getAdjustments);
+router.put('/adjustment/:id/respond', ctrl.respondToAdjustment);
+
 module.exports = router;

@@ -4,12 +4,13 @@ import toast from 'react-hot-toast';
 import { Loader2, ClipboardList } from 'lucide-react';
 import api from '../../api/axios';
 import AppLayout from '../../components/AppLayout';
+import { useAuth } from '../../hooks/useAuth';
 
 const STATUS_CLASS = {
   Pending: 'badge-pending', Approved: 'badge-approved', Rejected: 'badge-rejected',
 };
 
-function RequestsTable({ rows, columns }) {
+function RequestsTable({ rows, columns, onRespond, currentEmployeeId }) {
   if (!rows.length) return (
     <div className="empty-state" style={{ padding: 40 }}>
       <ClipboardList size={36} style={{ opacity: 0.3 }} />
@@ -23,52 +24,100 @@ function RequestsTable({ rows, columns }) {
           <tr>
             {columns.map(c => <th key={c.key}>{c.label}</th>)}
             <th>Status</th>
+            {onRespond && <th>Action</th>}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={r.id || i}>
-              {columns.map(c => (
-                <td key={c.key}>{c.render ? c.render(r) : r[c.key] ?? '—'}</td>
-              ))}
-              <td><span className={`badge ${STATUS_CLASS[r.status] || 'badge-draft'}`}>{r.status}</span></td>
-            </tr>
-          ))}
+          {rows.map((r, i) => {
+            const isAssignedPending = onRespond && 
+                                      r.assigned_to_employee_id === currentEmployeeId && 
+                                      r.status === 'Pending';
+            return (
+              <tr key={r.id || i}>
+                {columns.map(c => (
+                  <td key={c.key}>{c.render ? c.render(r) : r[c.key] ?? '—'}</td>
+                ))}
+                <td><span className={`badge ${STATUS_CLASS[r.status] || 'badge-draft'}`}>{r.status}</span></td>
+                {onRespond && (
+                  <td>
+                    {isAssignedPending ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button 
+                          className="btn btn-success" 
+                          style={{ padding: '4px 8px', fontSize: '0.75rem', height: 'auto', minHeight: 0, fontWeight: 700 }}
+                          onClick={() => onRespond(r.id, 'Approved')}
+                        >
+                          Accept
+                        </button>
+                        <button 
+                          className="btn btn-danger" 
+                          style={{ padding: '4px 8px', fontSize: '0.75rem', height: 'auto', minHeight: 0, fontWeight: 700 }}
+                          onClick={() => onRespond(r.id, 'Rejected')}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>
+                        {r.assigned_to_employee_id === currentEmployeeId ? 'Responded' : 'No Action Required'}
+                      </span>
+                    )}
+                  </td>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
-const TABS = ['Leave', 'OD', 'Extra Hours', 'Edit Requests'];
+const TABS = ['Leave', 'OD', 'Extra Hours', 'Edit Requests', 'Class Adjustments'];
 
 export default function MyRequestsPage() {
+  const { user } = useAuth();
   const [tab, setTab]         = useState('Leave');
   const [leaves, setLeaves]   = useState([]);
   const [ods, setODs]         = useState([]);
   const [extras, setExtras]   = useState([]);
   const [edits, setEdits]     = useState([]);
+  const [adjustments, setAdjustments] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const [l, o, e, ed] = await Promise.all([
+        const [l, o, e, ed, adj] = await Promise.all([
           api.get('/api/requests/leave'),
           api.get('/api/requests/od'),
           api.get('/api/requests/extra'),
           api.get('/api/requests/edit-requests'),
+          api.get('/api/requests/adjustment'),
         ]);
         setLeaves(l.data.data || []);
         setODs(o.data.data || []);
         setExtras(e.data.data || []);
         setEdits(ed.data.data || []);
+        setAdjustments(adj.data.data || []);
       } catch (_) { toast.error('Failed to load requests.'); }
       finally { setLoading(false); }
     };
     load();
   }, []);
+
+  const handleRespondToAdjustment = async (id, status) => {
+    try {
+      await api.put(`/api/requests/adjustment/${id}/respond`, { status });
+      toast.success(`Request ${status === 'Approved' ? 'accepted' : 'rejected'} successfully.`);
+      // reload adjustments list
+      const adj = await api.get('/api/requests/adjustment');
+      setAdjustments(adj.data.data || []);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to respond to request.');
+    }
+  };
 
   const tabContent = {
     'Leave': {
@@ -106,6 +155,39 @@ export default function MyRequestsPage() {
         { key: 'created_at',       label: 'Requested', render: r => r.created_at ? format(new Date(r.created_at), 'MMM d, yyyy') : '—' },
       ],
     },
+    'Class Adjustments': {
+      data: adjustments,
+      columns: [
+        { key: 'adjustment_date', label: 'Date', render: r => r.adjustment_date ? format(new Date(r.adjustment_date), 'yyyy-MM-dd') : '—' },
+        { key: 'time_slot', label: 'Time', render: r => `${r.from_time?.slice(0, 5)} - ${r.to_time?.slice(0, 5)}` },
+        { key: 'class', label: 'Class', render: r => `${r.subject_name} (${r.section || 'N/A'})` },
+        { key: 'direction', label: 'Adjustment Info', render: r => {
+          const typeStr = r.is_mutual ? '🔄 Mutual Swap' : '➡️ One-way Assign';
+          const directionText = r.employee_id === user?.employee_id
+            ? `Assigned to ${r.assigned_to_name}`
+            : `Assigned by ${r.full_name}`;
+          
+          if (r.is_mutual) {
+            return (
+              <div>
+                <div style={{ fontWeight: 600, color: '#f59e0b' }}>{typeStr}</div>
+                <div>{directionText}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 4 }}>
+                  Swap slot: {r.mutual_date ? format(new Date(r.mutual_date), 'yyyy-MM-dd') : ''} ({r.mutual_day}) {r.mutual_from_time?.slice(0, 5)} - {r.mutual_to_time?.slice(0, 5)} | {r.mutual_subject_name} ({r.mutual_section || 'N/A'})
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div>
+              <div style={{ fontWeight: 600 }}>{typeStr}</div>
+              <div>{directionText}</div>
+            </div>
+          );
+        }},
+        { key: 'remarks', label: 'Remarks/Note' }
+      ]
+    }
   };
 
   return (
@@ -138,6 +220,8 @@ export default function MyRequestsPage() {
         <RequestsTable
           rows={tabContent[tab]?.data || []}
           columns={tabContent[tab]?.columns || []}
+          onRespond={tab === 'Class Adjustments' ? handleRespondToAdjustment : null}
+          currentEmployeeId={user?.employee_id}
         />
       )}
     </AppLayout>

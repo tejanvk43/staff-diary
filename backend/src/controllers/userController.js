@@ -253,21 +253,21 @@ async function updateUser(req, res) {
   }
 
   const { full_name, short_name, highest_qualification, department,
-          designation, phone_number, email, role, bank_name, bank_account_no, bank_ifsc } = req.body;
+          designation, phone_number, email, role, bank_name, bank_account_no, bank_ifsc, bank_holder_name } = req.body;
 
   try {
     if (isAdmin) {
-      const hasBank = !!(bank_name && bank_account_no && bank_ifsc);
+      const hasBank = !!(bank_name && bank_account_no && bank_ifsc && bank_holder_name);
       await pool.query(
         `UPDATE users SET 
            full_name=?, short_name=?, highest_qualification=?, department=?, 
            designation=?, phone_number=?, email=COALESCE(?,email), role=?,
-           bank_name=?, bank_account_no=?, bank_ifsc=?, bank_details_submitted=?
+           bank_name=?, bank_account_no=?, bank_ifsc=?, bank_holder_name=?, bank_details_submitted=?
          WHERE employee_id=?`,
         [
           full_name, short_name||null, highest_qualification, department,
           designation||null, phone_number||null, email && String(email).trim() !== '' ? email.toLowerCase() : null, role,
-          bank_name||null, bank_account_no||null, bank_ifsc||null, hasBank,
+          bank_name||null, bank_account_no||null, bank_ifsc||null, bank_holder_name||null, hasBank,
           employee_id
         ]
       );
@@ -377,9 +377,9 @@ async function deleteUser(req, res) {
 // ─── POST /api/users/bank-details ────────────────────────────────────────────
 async function submitBankDetails(req, res) {
   const { employee_id } = req.user;
-  const { bank_name, bank_account_no, bank_ifsc } = req.body;
+  const { bank_name, bank_account_no, bank_ifsc, bank_holder_name } = req.body;
 
-  if (!bank_name || !bank_account_no || !bank_ifsc) {
+  if (!bank_name || !bank_account_no || !bank_ifsc || !bank_holder_name) {
     return res.status(400).json({ success: false, message: 'All bank details are required.' });
   }
 
@@ -393,8 +393,8 @@ async function submitBankDetails(req, res) {
     }
 
     await pool.query(
-      'UPDATE users SET bank_name = ?, bank_account_no = ?, bank_ifsc = ?, bank_details_submitted = TRUE WHERE employee_id = ?',
-      [bank_name.trim(), bank_account_no.trim(), bank_ifsc.trim().toUpperCase(), employee_id]
+      'UPDATE users SET bank_name = ?, bank_account_no = ?, bank_ifsc = ?, bank_holder_name = ?, bank_details_submitted = TRUE WHERE employee_id = ?',
+      [bank_name.trim(), bank_account_no.trim(), bank_ifsc.trim().toUpperCase(), bank_holder_name.trim(), employee_id]
     );
 
     return res.json({ success: true, message: 'Bank details submitted successfully.' });
@@ -407,14 +407,14 @@ async function submitBankDetails(req, res) {
 // ─── POST /api/users/bank-details/request ────────────────────────────────────
 async function requestBankDetailsChange(req, res) {
   const { employee_id } = req.user;
-  const { bank_name, bank_account_no, bank_ifsc, reason } = req.body;
+  const { bank_name, bank_account_no, bank_ifsc, bank_holder_name, reason } = req.body;
 
   if (!reason || String(reason).trim() === '') {
     return res.status(400).json({ success: false, message: 'Reason for change is required.' });
   }
 
   try {
-    const [userRows] = await pool.query('SELECT bank_name, bank_account_no, bank_ifsc FROM users WHERE employee_id = ?', [employee_id]);
+    const [userRows] = await pool.query('SELECT bank_name, bank_account_no, bank_ifsc, bank_holder_name FROM users WHERE employee_id = ?', [employee_id]);
     if (userRows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
@@ -431,8 +431,8 @@ async function requestBankDetailsChange(req, res) {
 
     await pool.query(
       `INSERT INTO bank_detail_change_requests 
-       (employee_id, old_bank_name, new_bank_name, old_bank_account_no, new_bank_account_no, old_bank_ifsc, new_bank_ifsc, reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (employee_id, old_bank_name, new_bank_name, old_bank_account_no, new_bank_account_no, old_bank_ifsc, new_bank_ifsc, old_bank_holder_name, new_bank_holder_name, reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         employee_id,
         user.bank_name,
@@ -441,6 +441,8 @@ async function requestBankDetailsChange(req, res) {
         bank_account_no ? bank_account_no.trim() : user.bank_account_no,
         user.bank_ifsc,
         bank_ifsc ? bank_ifsc.trim().toUpperCase() : user.bank_ifsc,
+        user.bank_holder_name,
+        bank_holder_name ? bank_holder_name.trim() : user.bank_holder_name,
         reason.trim()
       ]
     );

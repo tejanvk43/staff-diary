@@ -57,9 +57,18 @@ async function getPending(req, res) {
       params
     );
 
+    const [adjustments] = await pool.query(
+      `SELECT ca.*, u.full_name, u.department, u2.full_name AS assigned_to_name
+       FROM class_adjustments ca
+       JOIN users u ON ca.employee_id = u.employee_id
+       JOIN users u2 ON ca.assigned_to_employee_id = u2.employee_id
+       WHERE ca.status = 'Pending' ${deptFilter} ORDER BY ca.created_at DESC`,
+      params
+    );
+
     return res.json({
       success: true,
-      data: { leaves, ods, extras, changes, diary: diarySubmitted },
+      data: { leaves, ods, extras, changes, diary: diarySubmitted, adjustments },
     });
   } catch (err) {
     console.error(err);
@@ -237,4 +246,48 @@ async function approveDiary(req, res) {
   }
 }
 
-module.exports = { getPending, approveLeave, approveOD, approveExtra, approveChangeRequest, approveDiary };
+// ─── PUT /api/admin/approvals/adjustment/:id ──────────────────────────────────
+async function approveAdjustment(req, res) {
+  const { role, department, employee_id: reviewerId } = req.user;
+  const { status, remarks } = req.body;
+
+  if (!['Approved','Rejected'].includes(status)) {
+    return res.status(400).json({ success: false, message: 'status must be Approved or Rejected.' });
+  }
+
+  try {
+    const [caRows] = await pool.query(
+      `SELECT ca.*, u.department FROM class_adjustments ca
+       JOIN users u ON ca.employee_id = u.employee_id
+       WHERE ca.id = ?`,
+      [req.params.id]
+    );
+    if (caRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Adjustment request not found.' });
+    }
+    const ca = caRows[0];
+
+    if (role === 'HOD' && ca.department !== department) {
+      return res.status(403).json({ success: false, message: 'Forbidden. HOD can only approve requests of their department.' });
+    }
+
+    await pool.query(
+      `UPDATE class_adjustments SET status = ?, approved_by = ?, reviewed_at = NOW(), remarks = ? WHERE id = ?`,
+      [status, reviewerId, remarks || null, req.params.id]
+    );
+
+    // Notify the requesting faculty member
+    await notify(reviewerId, ca.employee_id,
+      `Class Adjustment ${status}`,
+      `Your class adjustment request on ${ca.adjustment_date} has been ${status.toLowerCase()}.${remarks ? ' Remarks: ' + remarks : ''}`,
+      'Timetable'
+    );
+
+    return res.json({ success: true, message: `Class adjustment request ${status.toLowerCase()}.` });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+}
+
+module.exports = { getPending, approveLeave, approveOD, approveExtra, approveChangeRequest, approveDiary, approveAdjustment };

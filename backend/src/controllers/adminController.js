@@ -965,8 +965,8 @@ async function reviewBankRequest(req, res) {
 
     if (status === 'Approved') {
       await conn.query(
-        'UPDATE users SET bank_name = ?, bank_account_no = ?, bank_ifsc = ? WHERE employee_id = ?',
-        [changeReq.new_bank_name, changeReq.new_bank_account_no, changeReq.new_bank_ifsc, changeReq.employee_id]
+        'UPDATE users SET bank_name = ?, bank_account_no = ?, bank_ifsc = ?, bank_holder_name = ? WHERE employee_id = ?',
+        [changeReq.new_bank_name, changeReq.new_bank_account_no, changeReq.new_bank_ifsc, changeReq.new_bank_holder_name, changeReq.employee_id]
       );
     }
 
@@ -987,7 +987,7 @@ async function getUserFullDetails(req, res) {
   try {
     const [userRows] = await pool.query(
       `SELECT employee_id, full_name, short_name, highest_qualification, department, 
-              designation, phone_number, bank_name, bank_account_no, bank_ifsc, 
+              designation, phone_number, bank_name, bank_account_no, bank_ifsc, bank_holder_name, 
               bank_details_submitted, email, role, is_first_login, created_at 
        FROM users WHERE employee_id = ?`,
       [employee_id]

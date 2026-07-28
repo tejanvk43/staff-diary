@@ -237,4 +237,68 @@ async function unassignedReport(req, res) {
   }
 }
 
-module.exports = { diaryReport, leaveReport, conflictReport, unassignedReport };
+// ─── GET /api/reports/adjustments ──────────────────────────────────────────────
+async function adjustmentsReport(req, res) {
+  const { employee_id: selfId, role, department } = req.user;
+  const { employee_id, from_date, to_date, format } = req.query;
+
+  if (!from_date || !to_date) {
+    return res.status(400).json({ success: false, message: 'from_date and to_date are required.' });
+  }
+
+  try {
+    let sql = `
+      SELECT ca.*, 
+             u.full_name AS requester_name, u.department AS requester_dept,
+             u2.full_name AS assigned_to_name, u2.department AS assigned_to_dept
+      FROM class_adjustments ca
+      JOIN users u ON ca.employee_id = u.employee_id
+      JOIN users u2 ON ca.assigned_to_employee_id = u2.employee_id
+      WHERE ca.adjustment_date BETWEEN ? AND ?
+    `;
+    const params = [from_date, to_date];
+
+    if (role === 'Faculty') {
+      sql += ' AND (ca.employee_id = ? OR ca.assigned_to_employee_id = ?)';
+      params.push(selfId, selfId);
+    } else if (employee_id) {
+      sql += ' AND (ca.employee_id = ? OR ca.assigned_to_employee_id = ?)';
+      params.push(employee_id, employee_id);
+    } else if (role === 'HOD') {
+      sql += ' AND (u.department = ? OR u2.department = ?)';
+      params.push(department, department);
+    }
+
+    sql += ' ORDER BY ca.adjustment_date ASC, ca.from_time ASC';
+    const [rows] = await pool.query(sql, params);
+
+    if (format === 'excel') {
+      const buffer = generateExcelBuffer(rows.map(r => ({
+        Date: r.adjustment_date,
+        'Requester Employee': r.employee_id,
+        'Requester Name': r.requester_name,
+        'Assigned Faculty Employee': r.assigned_to_employee_id,
+        'Assigned Faculty Name': r.assigned_to_name,
+        'From Time': r.from_time,
+        'To Time': r.to_time,
+        'Subject Name': r.subject_name,
+        Section: r.section || '',
+        'Is Mutual': r.is_mutual ? 'Yes' : 'No',
+        'Mutual Date': r.mutual_date || '',
+        'Mutual Subject': r.mutual_subject_name || '',
+        'Mutual Section': r.mutual_section || '',
+        Status: r.status,
+      })), 'Class Adjustments Report');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="adjustments_report_${from_date}_${to_date}.xlsx"`);
+      return res.send(buffer);
+    }
+
+    return res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error generating class adjustments report.' });
+  }
+}
+
+module.exports = { diaryReport, leaveReport, conflictReport, unassignedReport, adjustmentsReport };

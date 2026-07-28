@@ -224,6 +224,152 @@ async function getExtras(req, res) {
   }
 }
 
+// ─── Class Adjustments ────────────────────────────────────────────────────────
+async function createAdjustment(req, res) {
+  const { employee_id } = req.user;
+  const { 
+    adjustment_date, day, from_time, to_time, subject_name, section, assigned_to_employee_id,
+    is_mutual, mutual_date, mutual_day, mutual_from_time, mutual_to_time, mutual_subject_name, mutual_section 
+  } = req.body;
+
+  if (!adjustment_date || !day || !from_time || !to_time || !subject_name || !assigned_to_employee_id) {
+    return res.status(400).json({ success: false, message: 'Missing required fields.' });
+  }
+
+  try {
+    const statusVal = is_mutual ? 'Approved' : 'Pending';
+    const approvedByVal = is_mutual ? 'System' : null;
+    const reviewedAtVal = is_mutual ? new Date() : null;
+
+    await pool.query(
+      `INSERT INTO class_adjustments 
+       (employee_id, adjustment_date, day, from_time, to_time, subject_name, section, assigned_to_employee_id, status,
+        approved_by, reviewed_at,
+        is_mutual, mutual_date, mutual_day, mutual_from_time, mutual_to_time, mutual_subject_name, mutual_section)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        employee_id, adjustment_date, day, from_time, to_time, subject_name, section || null, assigned_to_employee_id,
+        statusVal,
+        approvedByVal,
+        reviewedAtVal,
+        is_mutual ? 1 : 0,
+        is_mutual ? mutual_date : null,
+        is_mutual ? mutual_day : null,
+        is_mutual ? mutual_from_time : null,
+        is_mutual ? mutual_to_time : null,
+        is_mutual ? mutual_subject_name : null,
+        is_mutual ? mutual_section || null : null
+      ]
+    );
+
+    // Notify the assigned faculty member
+    const [sender] = await pool.query('SELECT full_name FROM users WHERE employee_id = ?', [employee_id]);
+    const senderName = sender[0]?.full_name || employee_id;
+    
+    let notifMessage = `${senderName} has assigned their class (${subject_name} - ${section || ''}) on ${adjustment_date} (${from_time} - ${to_time}) to you.`;
+    if (is_mutual) {
+      notifMessage = `${senderName} requested a mutual class adjustment: they assign (${subject_name} - ${section || ''}) on ${adjustment_date} to you, and in return take (${mutual_subject_name} - ${mutual_section || ''}) on ${mutual_date} from you.`;
+    }
+
+    await pool.query(
+      `INSERT INTO notifications (sender_employee_id, receiver_employee_id, title, message, notification_type)
+       VALUES (?, ?, ?, ?, 'Timetable')`,
+      [
+        employee_id,
+        assigned_to_employee_id,
+        is_mutual ? 'Mutual Class Adjustment Requested' : 'Class Adjustment Assigned',
+        notifMessage
+      ]
+    );
+
+    return res.status(201).json({ success: true, message: 'Class adjustment request submitted.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+}
+
+async function getAdjustments(req, res) {
+  const { employee_id, role, department } = req.user;
+  try {
+    let sql = `SELECT ca.*, u.full_name, u.department, u2.full_name AS assigned_to_name
+               FROM class_adjustments ca
+               JOIN users u ON ca.employee_id = u.employee_id
+               JOIN users u2 ON ca.assigned_to_employee_id = u2.employee_id
+               WHERE 1=1`;
+    const params = [];
+
+    if (role === 'Faculty') {
+      sql += ' AND (ca.employee_id = ? OR ca.assigned_to_employee_id = ?)';
+      params.push(employee_id, employee_id);
+    } else if (role === 'HOD') {
+      sql += ' AND u.department = ?';
+      params.push(department);
+    }
+
+    sql += ' ORDER BY ca.created_at DESC';
+    const [rows] = await pool.query(sql, params);
+    return res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+}
+
+// ─── PUT /api/requests/adjustment/:id/respond ────────────────────────────────
+async function respondToAdjustment(req, res) {
+  const { employee_id } = req.user;
+  const { id } = req.params;
+  const { status } = req.body; // 'Approved' or 'Rejected'
+
+  if (!['Approved', 'Rejected'].includes(status)) {
+    return res.status(400).json({ success: false, message: 'Invalid status response.' });
+  }
+
+  try {
+    // Check if the adjustment request exists
+    const [caRows] = await pool.query('SELECT * FROM class_adjustments WHERE id = ?', [id]);
+    if (caRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Adjustment request not found.' });
+    }
+
+    const ca = caRows[0];
+    if (ca.assigned_to_employee_id !== employee_id) {
+      return res.status(403).json({ success: false, message: 'Access denied. This request is not assigned to you.' });
+    }
+
+    if (ca.status !== 'Pending') {
+      return res.status(400).json({ success: false, message: 'This request has already been processed.' });
+    }
+
+    // Update status. When Faculty B accepts, it is directly marked as Approved (or Rejected).
+    // approved_by is set to the responder's employee ID, reviewed_at is NOW()
+    await pool.query(
+      'UPDATE class_adjustments SET status = ?, approved_by = ?, reviewed_at = NOW() WHERE id = ?',
+      [status, employee_id, id]
+    );
+
+    // Notify the requesting faculty A
+    const [responder] = await pool.query('SELECT full_name FROM users WHERE employee_id = ?', [employee_id]);
+    const responderName = responder[0]?.full_name || employee_id;
+    await pool.query(
+      `INSERT INTO notifications (sender_employee_id, receiver_employee_id, title, message, notification_type)
+       VALUES (?, ?, ?, ?, 'Timetable')`,
+      [
+        employee_id,
+        ca.employee_id,
+        `Adjustment ${status}`,
+        `${responderName} has ${status.toLowerCase()} your class adjustment request for ${ca.adjustment_date}.`
+      ]
+    );
+
+    return res.json({ success: true, message: `Request successfully ${status.toLowerCase()}.` });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Server error responding to adjustment.' });
+  }
+}
+
 // ─── Edit Requests ────────────────────────────────────────────────────────────
 async function getEditRequests(req, res) {
   const { employee_id, role, department } = req.user;
@@ -241,4 +387,4 @@ async function getEditRequests(req, res) {
   }
 }
 
-module.exports = { createLeave, getLeaves, createOD, getODs, createExtra, getExtras, getEditRequests };
+module.exports = { createLeave, getLeaves, createOD, getODs, createExtra, getExtras, getEditRequests, createAdjustment, getAdjustments, respondToAdjustment };

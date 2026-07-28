@@ -70,10 +70,23 @@ async function getToday(req, res) {
       [employee_id]
     );
 
+    // Fetch approved adjustments for today involving the current user
+    const [adjustments] = await pool.query(
+      `SELECT ca.*, u.full_name AS requester_name, u2.full_name AS assigned_to_name
+       FROM class_adjustments ca
+       JOIN users u ON ca.employee_id = u.employee_id
+       JOIN users u2 ON ca.assigned_to_employee_id = u2.employee_id
+       WHERE (ca.adjustment_date = ? OR (ca.is_mutual = 1 AND ca.mutual_date = ?))
+         AND ca.status = 'Approved'
+         AND (ca.employee_id = ? OR ca.assigned_to_employee_id = ?)`,
+      [todayStr, todayStr, employee_id, employee_id]
+    );
+
     return res.json({
       success: true,
       data: {
         entries,
+        adjustments,
         holiday: holidayName,
         auto_populated: false,
         date_edit_status,
@@ -130,9 +143,22 @@ async function getByDate(req, res) {
       [employee_id, date]
     );
 
+    // Fetch approved adjustments for the given date involving the current user
+    const [adjustments] = await pool.query(
+      `SELECT ca.*, u.full_name AS requester_name, u2.full_name AS assigned_to_name
+       FROM class_adjustments ca
+       JOIN users u ON ca.employee_id = u.employee_id
+       JOIN users u2 ON ca.assigned_to_employee_id = u2.employee_id
+       WHERE (ca.adjustment_date = ? OR (ca.is_mutual = 1 AND ca.mutual_date = ?))
+         AND ca.status = 'Approved'
+         AND (ca.employee_id = ? OR ca.assigned_to_employee_id = ?)`,
+      [date, date, employee_id, employee_id]
+    );
+
     return res.json({
       success: true,
       data: entries,
+      adjustments,
       holiday: holidayName,
       date_edit_status,
       date_edit_approved,

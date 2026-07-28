@@ -95,7 +95,7 @@ async function changePassword(req, res) {
 async function me(req, res) {
   try {
     const [rows] = await pool.query(
-      'SELECT employee_id, full_name, short_name, highest_qualification, department, designation, phone_number, bank_name, bank_account_no, bank_ifsc, bank_details_submitted, email, role, is_first_login, created_at FROM users WHERE employee_id = ?',
+      'SELECT employee_id, full_name, short_name, highest_qualification, department, designation, phone_number, bank_name, bank_account_no, bank_ifsc, bank_holder_name, bank_details_submitted, email, role, is_first_login, created_at FROM users WHERE employee_id = ?',
       [req.user.employee_id]
     );
     if (rows.length === 0) {

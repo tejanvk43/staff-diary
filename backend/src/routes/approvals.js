@@ -12,5 +12,6 @@ router.put('/od/:id',             role('Admin'), ctrl.approveOD);
 router.put('/extra/:id',          role('Admin'), ctrl.approveExtra);
 router.put('/change-request/:id', role('Admin'), ctrl.approveChangeRequest);
 router.put('/diary/:id',          role('Admin'), ctrl.approveDiary);
+router.put('/adjustment/:id',     role('Admin', 'HOD'), ctrl.approveAdjustment);
 
 module.exports = router;

@@ -36,6 +36,7 @@ import BlockTimetableEditorPage from './pages/Admin/BlockTimetableEditorPage';
 import ProgramsPage       from './pages/Admin/ProgramsPage';
 import FacultyTimetableImportPage from './pages/Admin/FacultyTimetableImportPage';
 import SectionTimetablePage        from './pages/Admin/SectionTimetablePage';
+import CounselingPage             from './pages/CounselingPage';
 
 
 function App() {
@@ -82,6 +83,12 @@ function App() {
             </ProtectedRoute>
           } />
 
+          <Route path="/counseling" element={
+            <ProtectedRoute roles={['Admin', 'HOD', 'Faculty']}>
+              <CounselingPage />
+            </ProtectedRoute>
+          } />
+
           {/* Faculty / shared routes */}
           <Route path="/dashboard" element={
             <ProtectedRoute>
@@ -121,9 +128,9 @@ function App() {
             </ProtectedRoute>
           } />
 
-          {/* Admin + HOD shared routes */}
+          {/* Admin only approvals route */}
           <Route path="/admin/approvals" element={
-            <ProtectedRoute roles={['Admin','HOD']}>
+            <ProtectedRoute roles={['Admin']}>
               <ApprovalsPage />
             </ProtectedRoute>
           } />

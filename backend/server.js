@@ -25,6 +25,7 @@ const notificationsRoutes = require('./src/routes/notifications');
 const adminRoutes         = require('./src/routes/admin');
 const blockTimetableRoutes    = require('./src/routes/blockTimetable');
 const facultySetupRoutes      = require('./src/routes/facultySetup');
+const counselingRoutes        = require('./src/routes/counseling');
 
 const app = express();
 
@@ -55,6 +56,7 @@ app.use('/api/timetable',               timetableRoutes);
 app.use('/api/requests',                requestRoutes);
 app.use('/api/reports',                 reportsRoutes);
 app.use('/api/notifications',           notificationsRoutes);
+app.use('/api/counseling',              counselingRoutes);
 // Generic /api/admin LAST — catches /api/admin/config, /api/admin/holidays, /api/admin/departments, /api/admin/subjects
 app.use('/api/admin',                   adminRoutes);
 

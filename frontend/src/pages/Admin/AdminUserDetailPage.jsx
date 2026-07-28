@@ -101,6 +101,7 @@ export default function AdminUserDetailPage() {
     bank_name: '',
     bank_account_no: '',
     bank_ifsc: '',
+    bank_holder_name: '',
   });
 
   const [departments, setDepartments] = useState([]);
@@ -140,6 +141,7 @@ export default function AdminUserDetailPage() {
           bank_name:             userObj.bank_name || '',
           bank_account_no:       userObj.bank_account_no || '',
           bank_ifsc:             userObj.bank_ifsc || '',
+          bank_holder_name:      userObj.bank_holder_name || '',
         });
 
         setAllSubjects(subjectsRes.data.data || []);
@@ -168,7 +170,7 @@ export default function AdminUserDetailPage() {
       setUserData(prev => ({
         ...prev,
         ...profileForm,
-        bank_details_submitted: !!(profileForm.bank_name && profileForm.bank_account_no && profileForm.bank_ifsc)
+        bank_details_submitted: !!(profileForm.bank_name && profileForm.bank_account_no && profileForm.bank_ifsc && profileForm.bank_holder_name)
       }));
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update user profile.');
@@ -410,6 +412,16 @@ export default function AdminUserDetailPage() {
                 <h3 style={{ fontWeight: 700, fontSize: '0.95rem' }}>Bank Details {isHod ? "(View Only)" : "(Manual Admin Overwrite)"}</h3>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 20 }}>
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label">Staff Name as in Bank</label>
+                  <input
+                    className="input"
+                    value={profileForm.bank_holder_name}
+                    onChange={e => setProfileForm(f => ({ ...f, bank_holder_name: e.target.value }))}
+                    placeholder="e.g. JOHN DOE"
+                    disabled={isHod}
+                  />
+                </div>
                 <div className="form-group">
                   <label className="form-label">Bank Name</label>
                   <input

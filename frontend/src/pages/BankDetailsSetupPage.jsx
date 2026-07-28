@@ -20,6 +20,7 @@ export default function BankDetailsSetupPage() {
         bank_name: data.bank_name,
         bank_account_no: data.bank_account_no,
         bank_ifsc: data.bank_ifsc,
+        bank_holder_name: data.bank_holder_name,
       });
       toast.success('Bank details saved successfully!');
       updateUser({ bank_details_submitted: true });
@@ -59,9 +60,22 @@ export default function BankDetailsSetupPage() {
 
         <div className="card" style={{ padding: 28 }}>
           <form onSubmit={handleSubmit(onSubmit)}>
+            {/* Bank Holder Name */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="bank-holder-name">Staff Name as in Bank *</label>
+              <input
+                id="bank-holder-name"
+                type="text"
+                className="input"
+                placeholder="e.g. JOHN DOE"
+                {...register('bank_holder_name', { required: 'Staff name as in bank is required' })}
+              />
+              {errors.bank_holder_name && <p style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginTop: 4 }}>{errors.bank_holder_name.message}</p>}
+            </div>
+
             {/* Bank Name */}
             <div className="form-group">
-              <label className="form-label" htmlFor="bank-name">Bank Name</label>
+              <label className="form-label" htmlFor="bank-name">Bank Name *</label>
               <input
                 id="bank-name"
                 type="text"
@@ -74,7 +88,7 @@ export default function BankDetailsSetupPage() {
 
             {/* Bank Account Number */}
             <div className="form-group">
-              <label className="form-label" htmlFor="bank-account-no">Bank Account Number</label>
+              <label className="form-label" htmlFor="bank-account-no">Bank Account Number *</label>
               <input
                 id="bank-account-no"
                 type="text"
@@ -90,7 +104,7 @@ export default function BankDetailsSetupPage() {
 
             {/* IFSC Code */}
             <div className="form-group">
-              <label className="form-label" htmlFor="bank-ifsc">IFSC Code</label>
+              <label className="form-label" htmlFor="bank-ifsc">IFSC Code *</label>
               <input
                 id="bank-ifsc"
                 type="text"
@@ -117,6 +131,18 @@ export default function BankDetailsSetupPage() {
               ) : (
                 <><span>Save Details</span><ArrowRight size={16} /></>
               )}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                localStorage.setItem('bank_details_postponed', 'true');
+                navigate('/dashboard');
+              }}
+              style={{ width: '100%', justifyContent: 'center', padding: '12px', marginTop: 12 }}
+            >
+              Will Enter Later
             </button>
           </form>
         </div>

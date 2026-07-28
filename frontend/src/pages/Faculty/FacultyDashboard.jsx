@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import api from '../../api/axios';
 import AppLayout from '../../components/AppLayout';
+import { useAuth } from '../../hooks/useAuth';
 import * as XLSX from 'xlsx';
 
 const ACTIVITY_TYPES = ['Teaching','Meeting','Research','Administration','Exam Duty','Lab Work','Other'];
@@ -804,9 +805,11 @@ function TimetableDiaryTable({ periods, entries, otherEntries = [], onSave, isLo
     if (period.isOtherWork) {
       return note ? `${period.short_name} - ${note}` : period.short_name;
     }
-    const subjectStr = period.subject_name
-      ? `${period.subject_name} (${period.subject_code})`
-      : (period.short_name || period.subject_code || 'Teaching');
+    const subjectStr = period.isAdjustment
+      ? `${period.subject_name} (Adjusted from ${period.original_faculty_name})`
+      : period.subject_name
+        ? `${period.subject_name} (${period.subject_code})`
+        : (period.short_name || period.subject_code || 'Teaching');
     return note ? `${subjectStr} - ${note}` : subjectStr;
   };
 
@@ -1366,6 +1369,7 @@ function EntryCard({ entry, onEdit, onDelete, onSubmit, onRequestEdit, isToday, 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function FacultyDashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [entries, setEntries]         = useState([]);
   const [holiday, setHoliday]         = useState(null);
   const [loading, setLoading]         = useState(true);
@@ -1378,6 +1382,7 @@ export default function FacultyDashboard() {
   const [myTimetable, setMyTimetable] = useState([]);
   const [myOtherWorks, setMyOtherWorks] = useState([]);
   const [hasTimetable, setHasTimetable] = useState(null); // null = loading
+  const [adjustments, setAdjustments] = useState([]);
 
   const [dateEditStatus, setDateEditStatus] = useState(null);
   const [dateEditApproved, setDateEditApproved] = useState(false);
@@ -1442,6 +1447,7 @@ export default function FacultyDashboard() {
       if (date === todayLocal) {
         const res = await api.get('/api/diary/today');
         setEntries(res.data.data.entries || []);
+        setAdjustments(res.data.data.adjustments || []);
         setHoliday(res.data.data.holiday);
         setDateEditStatus(res.data.data.date_edit_status || null);
         setDateEditApproved(res.data.data.date_edit_approved || false);
@@ -1450,6 +1456,7 @@ export default function FacultyDashboard() {
       } else {
         const res = await api.get(`/api/diary?date=${date}`);
         setEntries(res.data.data || []);
+        setAdjustments(res.data.adjustments || []);
         setHoliday(res.data.holiday || null);
         setDateEditStatus(res.data.date_edit_status || null);
         setDateEditApproved(res.data.date_edit_approved || false);
@@ -1781,7 +1788,68 @@ export default function FacultyDashboard() {
               {/* ── Timetable Diary Table ── */}
               {isTodayView && (() => {
                 const dayOfWeek = getDayOfWeek(viewDate);
-                const todayRegularPeriods = myTimetable.filter(p => p.day === dayOfWeek);
+                const viewDateStr = viewDate;
+                
+                // Start with regular timetable periods
+                let todayRegularPeriods = myTimetable.filter(p => p.day === dayOfWeek);
+
+                // Filter out outgoing adjustments (both normal and mutual swap-back)
+                todayRegularPeriods = todayRegularPeriods.filter(p => {
+                  const pFrom = p.from_time.slice(0, 5);
+                  const pTo = p.to_time.slice(0, 5);
+                  
+                  return !adjustments.some(adj => {
+                    const adjDateStr = adj.adjustment_date?.slice(0, 10);
+                    const mutualDateStr = adj.mutual_date?.slice(0, 10);
+                    const isRegularOutgoing = (adj.employee_id === user.employee_id && 
+                                               adjDateStr === viewDateStr &&
+                                               adj.from_time.slice(0, 5) === pFrom && 
+                                               adj.to_time.slice(0, 5) === pTo);
+                    const isMutualOutgoing = (adj.is_mutual && 
+                                             adj.assigned_to_employee_id === user.employee_id && 
+                                             mutualDateStr === viewDateStr &&
+                                             adj.mutual_from_time.slice(0, 5) === pFrom && 
+                                             adj.mutual_to_time.slice(0, 5) === pTo);
+                    return isRegularOutgoing || isMutualOutgoing;
+                  });
+                });
+
+                // Add incoming adjustments (both normal and mutual swap-back)
+                const incomingPeriods = [];
+                adjustments.forEach(adj => {
+                  const adjDateStr = adj.adjustment_date?.slice(0, 10);
+                  const mutualDateStr = adj.mutual_date?.slice(0, 10);
+
+                  if (adj.assigned_to_employee_id === user.employee_id && adjDateStr === viewDateStr) {
+                    incomingPeriods.push({
+                      day: dayOfWeek,
+                      from_time: adj.from_time,
+                      to_time: adj.to_time,
+                      subject_type: 'Teaching',
+                      short_name: adj.subject_name,
+                      subject_name: adj.subject_name,
+                      subject_code: 'ADJUSTED',
+                      section: adj.section || '',
+                      isAdjustment: true,
+                      original_faculty_name: adj.requester_name
+                    });
+                  }
+                  if (adj.is_mutual && adj.employee_id === user.employee_id && mutualDateStr === viewDateStr) {
+                    incomingPeriods.push({
+                      day: dayOfWeek,
+                      from_time: adj.mutual_from_time,
+                      to_time: adj.mutual_to_time,
+                      subject_type: 'Teaching',
+                      short_name: adj.mutual_subject_name,
+                      subject_name: adj.mutual_subject_name,
+                      subject_code: 'ADJUSTED',
+                      section: adj.mutual_section || '',
+                      isAdjustment: true,
+                      original_faculty_name: adj.assigned_to_name
+                    });
+                  }
+                });
+
                 const todayOtherWorks = myOtherWorks.filter(ow => ow.day === dayOfWeek).map(ow => ({
                   day: ow.day,
                   from_time: ow.from_time,
@@ -1792,7 +1860,8 @@ export default function FacultyDashboard() {
                   subject_code: 'OTHER',
                   isOtherWork: true
                 }));
-                const todayPeriods = [...todayRegularPeriods, ...todayOtherWorks].sort((a, b) =>
+
+                const todayPeriods = [...todayRegularPeriods, ...incomingPeriods, ...todayOtherWorks].sort((a, b) =>
                   a.from_time.localeCompare(b.from_time)
                 );
                 return todayPeriods.length > 0 ? (
