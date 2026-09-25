@@ -28,6 +28,11 @@ const getPeriodNumber = (fromTime, educationType) => {
     if (idx !== -1) return idx + 1;
   }
 
+  // Support imported/demo schedules that use uniform one-hour periods.
+  const uniformTimings = ['09:00', '10:00', '11:15', '13:15', '14:15', '15:15'];
+  const uniformIndex = uniformTimings.indexOf(normTime);
+  if (uniformIndex !== -1) return uniformIndex + 1;
+
   // Fallbacks
   const btechTimings = ['08:40', '09:40', '11:10', '12:10', '14:00', '15:00'];
   const bIdx = btechTimings.indexOf(normTime);

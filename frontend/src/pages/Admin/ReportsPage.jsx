@@ -50,7 +50,12 @@ export default function ReportsPage() {
   };
 
   const downloadExcel = async () => {
+    if (reportType === 'diary' && !selectedUser) {
+      toast.error('Select an employee for the staff report format.');
+      return;
+    }
     const params = new URLSearchParams({ from_date: fromDate, to_date: toDate, format: 'excel' });
+    if (reportType === 'diary') params.append('template', 'staff');
     if (selectedUser) params.append('employee_id', selectedUser);
     try {
       const token = localStorage.getItem('token');

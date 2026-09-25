@@ -30,7 +30,7 @@ INSERT IGNORE INTO departments (department_name, department_code) VALUES
 -- Password: Admin@1234  (bcrypt hash generated with 10 rounds)
 -- ============================================================
 INSERT IGNORE INTO users
-  (employee_id, full_name, short_name, education_type, department, designation, email, password_hash, role, is_first_login)
+  (employee_id, full_name, short_name, highest_qualification, department, designation, email, password_hash, role, is_first_login)
 VALUES
   (
     'ADMIN001',

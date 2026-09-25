@@ -1,5 +1,5 @@
 INSERT IGNORE INTO users
-  (employee_id, full_name, short_name, education_type, department, designation, email, password_hash, role, is_first_login)
+  (employee_id, full_name, short_name, highest_qualification, department, designation, email, password_hash, role, is_first_login)
 VALUES
   (
     'ADMIN002',
