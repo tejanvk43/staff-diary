@@ -197,7 +197,7 @@ For bulk user upload, the Excel file must have these columns:
 | employee_id    | ✅       | Unique, e.g. `FAC001`    |
 | full_name      | ✅       | Full name                 |
 | email          | ✅       | Valid email               |
-| education_type | ✅       | `B-Tech` or `Diploma`     |
+| education_type | ✅       | `B.Tech` or `Diploma`     |
 | department     | ✅       | Department name           |
 | role           | ✅       | `Faculty`, `HOD`, `Admin` |
 | short_name     | ❌       | Abbreviated name          |

@@ -131,14 +131,14 @@ export default function SectionsPage() {
     const data = [
       {
         section_name: 'CSE-A',
-        education_type: 'B-Tech',
+        education_type: 'B.Tech',
         year: 2,
         department: 'CSE',
         block_name: 'U-BLOCK'
       },
       {
         section_name: 'ECE-A',
-        education_type: 'B-Tech',
+        education_type: 'B.Tech',
         year: 1,
         department: 'ECE',
         block_name: 'R-BLOCK'
@@ -224,7 +224,7 @@ export default function SectionsPage() {
     return matchEdu && matchDept && matchText;
   });
 
-  const eduColors = { 'B-Tech': '#6366f1', Diploma: '#f59e0b', 'M-Tech': '#8b5cf6' };
+  const eduColors = { 'B.Tech': '#6366f1', Diploma: '#f59e0b', 'M-Tech': '#8b5cf6' };
 
   return (
     <AppLayout title="Sections Management">

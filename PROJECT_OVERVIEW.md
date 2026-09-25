@@ -368,3 +368,14 @@ scripts\start-all.bat      # Windows
 | `admin@college.edu` | `Admin@1234` | Admin |
 
 > ⚠️ Change the admin password immediately after first login.
+
+
+---
+
+## Messaging & Audit Archive
+
+The application now includes `/messaging` for auditable staff communication. Admins can send to all staff, HODs only, or one individual staff member. HODs can create department-group conversations, add or remove department recipients, and reply within their department. Staff can view and reply to conversations where they are participants.
+
+The messaging backend is mounted at `/api/messaging` and provides participant discovery, conversation creation, conversation listing, date-range filtering, message history, replies, and HOD-owned department-group membership management. Admins have unrestricted visibility into all conversations and messages, including individual and HOD conversations. Other roles are limited to conversations in which they are participants.
+
+Messages are stored in `message_records` with a server-generated `sent_at` timestamp and SHA-256 `immutable_hash`. There are no update or delete message endpoints, and database triggers reject direct `UPDATE` or `DELETE` attempts against sent messages. Group membership changes do not modify existing records. Apply `database/messaging_migration.sql` (also included in `backend/run_all_migrations.js`) before using the messaging module on an existing database.

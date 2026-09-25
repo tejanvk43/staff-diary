@@ -26,6 +26,7 @@ const adminRoutes         = require('./src/routes/admin');
 const blockTimetableRoutes    = require('./src/routes/blockTimetable');
 const facultySetupRoutes      = require('./src/routes/facultySetup');
 const counselingRoutes        = require('./src/routes/counseling');
+const messagingRoutes         = require('./src/routes/messaging');
 
 const app = express();
 
@@ -47,6 +48,7 @@ app.get('/api/health', (req, res) => {
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth',                    authRoutes);
 // ⚠️  Specific /api/admin/* routes MUST come before the generic /api/admin handler
+app.use('/api/users',                   userRoutes);
 app.use('/api/admin/users',             userRoutes);
 app.use('/api/admin/approvals',         approvalsRoutes);
 app.use('/api/admin/block-timetables',  blockTimetableRoutes);
@@ -57,6 +59,7 @@ app.use('/api/requests',                requestRoutes);
 app.use('/api/reports',                 reportsRoutes);
 app.use('/api/notifications',           notificationsRoutes);
 app.use('/api/counseling',              counselingRoutes);
+app.use('/api/messaging',               messagingRoutes);
 // Generic /api/admin LAST — catches /api/admin/config, /api/admin/holidays, /api/admin/departments, /api/admin/subjects
 app.use('/api/admin',                   adminRoutes);
 

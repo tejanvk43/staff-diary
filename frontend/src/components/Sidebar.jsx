@@ -6,7 +6,7 @@ import {
   ClipboardList, Users, Settings, BarChart2,
   LogOut, GraduationCap, Calendar, Bell,
   CheckSquare, AlertTriangle, BookMarked, Building2, UserCheck, User, SlidersHorizontal,
-  LayoutGrid, Edit2, Layers,
+  LayoutGrid, Edit2, Layers, MessageSquare,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -16,6 +16,7 @@ const FACULTY_NAV = [
   { to: '/setup',          icon: SlidersHorizontal,    label: 'My Setup' },
   { to: '/timetable',      icon: CalendarDays,         label: 'Timetable' },
   { to: '/counseling',     icon: UserCheck,            label: 'Student Counselling' },
+  { to: '/messaging',       icon: MessageSquare,        label: 'Messages' },
   { to: '/leave',          icon: Calendar,             label: 'Leave & OD' },
   { to: '/request-edit',   icon: Edit2,                label: 'Request Edit' },
   { to: '/my-requests',    icon: ClipboardList,        label: 'My Requests' },
@@ -26,6 +27,7 @@ const ADMIN_NAV = [
   { to: '/dashboard',               icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/admin/users',             icon: Users,            label: 'User Management' },
   { to: '/counseling',              icon: UserCheck,        label: 'Student Counselling' },
+  { to: '/messaging',                icon: MessageSquare,   label: 'Message Archive' },
   { to: '/admin/approvals',         icon: CheckSquare,      label: 'Approvals' },
   { to: '/admin/block-timetables',  icon: CalendarDays,     label: 'Block Timetables' },
   { to: '/admin/section-timetables',icon: LayoutGrid,       label: 'Section Timetables' },
@@ -48,6 +50,7 @@ const HOD_NAV = [
   { to: '/setup',                   icon: SlidersHorizontal, label: 'My Setup' },
   { to: '/admin/users',             icon: Users,             label: 'Department Staff' },
   { to: '/counseling',              icon: UserCheck,         label: 'Student Counselling' },
+  { to: '/messaging',                icon: MessageSquare,    label: 'Department Messages' },
   { to: '/admin/faculty-timetable', icon: Calendar,          label: 'Faculty Timetable' },
   { to: '/admin/reports',           icon: BarChart2,         label: 'Reports' },
   { to: '/leave',                   icon: Calendar,          label: 'Leave & OD' },

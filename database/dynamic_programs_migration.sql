@@ -9,7 +9,7 @@ USE college_diary;
 ALTER TABLE users MODIFY COLUMN education_type VARCHAR(50) NOT NULL;
 ALTER TABLE subjects MODIFY COLUMN education_type VARCHAR(50) NOT NULL;
 ALTER TABLE timetables MODIFY COLUMN education_type VARCHAR(50) NOT NULL;
-ALTER TABLE block_timetables MODIFY COLUMN education_type VARCHAR(50) DEFAULT 'B-Tech';
+ALTER TABLE block_timetables MODIFY COLUMN education_type VARCHAR(50) DEFAULT 'B.Tech';
 ALTER TABLE class_sections MODIFY COLUMN education_type VARCHAR(50) NOT NULL;
 
 -- 2. Create programs table
@@ -39,8 +39,8 @@ CREATE TABLE IF NOT EXISTS program_branches (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 5. Seed default programs data
-INSERT INTO programs (name) VALUES ('B-Tech') ON DUPLICATE KEY UPDATE name=name;
-SET @btech_id = (SELECT id FROM programs WHERE name = 'B-Tech');
+INSERT INTO programs (name) VALUES ('B.Tech') ON DUPLICATE KEY UPDATE name=name;
+SET @btech_id = (SELECT id FROM programs WHERE name = 'B.Tech');
 INSERT IGNORE INTO program_years (program_id, year_number, year_name) VALUES
   (@btech_id, 1, 'Year 1'),
   (@btech_id, 2, 'Year 2'),

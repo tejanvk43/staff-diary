@@ -319,12 +319,12 @@ function EntryModal({ onClose, onSave, existingEntry, todayStart, todayEnd, exis
         const subjectStr = p.subject_name
           ? `${p.subject_name} (${p.subject_code})`
           : (p.short_name || p.subject_code || 'Teaching');
-        finalDesc = notes.trim() ? `${subjectStr} - ${notes.trim()}` : subjectStr;
+        finalDesc = notes.trim() ? `${subjectStr} - ${notes.trim()}` : '';
       } else if (entryMode === 'other' && activity === 'Teaching') {
         // Build: "Year X · SectionName · SubjectName - notes"
         const yearLabel = teachYear ? `Year ${teachYear}` : '';
         const parts = [yearLabel, teachSection, teachSubject].filter(Boolean).join(' · ');
-        finalDesc = notes.trim() ? `${parts} - ${notes.trim()}` : parts;
+        finalDesc = notes.trim() ? `${parts} - ${notes.trim()}` : '';
       }
 
       await onSave({
@@ -769,6 +769,7 @@ function TimetableDiaryTable({ periods, entries, otherEntries = [], onSave, isLo
   const [saving, setSaving]       = useState(false);
   const [savedRows, setSavedRows] = useState({});
   const [savedOther, setSavedOther] = useState({});
+  const saveInFlight = useRef(false);
 
   const matchEntry = (period) => {
     const pFrom = period.from_time?.slice(0, 5);
@@ -800,21 +801,40 @@ function TimetableDiaryTable({ periods, entries, otherEntries = [], onSave, isLo
     return fmt12(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
   };
 
-  const buildDesc = (period, idx) => {
-    const note = (notes[idx] ?? '').trim();
-    if (period.isOtherWork) {
-      return note ? `${period.short_name} - ${note}` : period.short_name;
-    }
-    const subjectStr = period.isAdjustment
+  const getSubjectLabel = (period) => {
+    if (period.isOtherWork) return period.short_name || '';
+    return period.isAdjustment
       ? `${period.subject_name} (Adjusted from ${period.original_faculty_name})`
       : period.subject_name
         ? `${period.subject_name} (${period.subject_code})`
         : (period.short_name || period.subject_code || 'Teaching');
-    return note ? `${subjectStr} - ${note}` : subjectStr;
+  };
+
+  const getExistingNote = (period, existing) => {
+    const description = String(existing?.description || '').trim();
+    if (!description) return '';
+    const subjectLabel = getSubjectLabel(period);
+    if (subjectLabel && description === subjectLabel) return '';
+    if (subjectLabel && description.startsWith(`${subjectLabel} - `)) {
+      return description.slice(subjectLabel.length + 3).trim();
+    }
+    return description;
+  };
+
+  const buildDesc = (period, idx, existing) => {
+    // An initialized textarea is authoritative, including an intentional blank.
+    // If the user has not touched the row, recover only their note portion from
+    // the existing generated description rather than re-saving the old prefix.
+    const note = notes[idx] !== undefined
+      ? String(notes[idx]).trim()
+      : getExistingNote(period, existing);
+    const subjectLabel = getSubjectLabel(period);
+    return note && subjectLabel ? `${subjectLabel} - ${note}` : note;
   };
 
   // ── Save All: timetable rows + other-works draft rows ──
   const handleSaveAll = async () => {
+    if (saveInFlight.current) return;
     const tasks = [];
 
     // Timetable periods
@@ -835,6 +855,7 @@ function TimetableDiaryTable({ periods, entries, otherEntries = [], onSave, isLo
 
     if (tasks.length === 0) { toast('No editable entries to save.'); return; }
 
+    saveInFlight.current = true;
     setSaving(true);
     let ok = 0;
     const newSaved = {}, newSavedOther = {};
@@ -860,7 +881,7 @@ function TimetableDiaryTable({ periods, entries, otherEntries = [], onSave, isLo
             from_time:     `${viewDate}T${period.from_time.slice(0, 5)}:00`,
             to_time:       `${viewDate}T${period.to_time.slice(0, 5)}:00`,
             activity_type: activityType,
-            description:   buildDesc(period, idx),
+              description:   buildDesc(period, idx, existing),
           };
           if (existing?.id) await api.put(`/api/diary/${existing.id}`, payload);
           else              await api.post('/api/diary', payload);
@@ -882,6 +903,7 @@ function TimetableDiaryTable({ periods, entries, otherEntries = [], onSave, isLo
       }
     }));
 
+    saveInFlight.current = false;
     setSaving(false);
     if (ok > 0) {
       setSavedRows(newSaved);
@@ -979,11 +1001,7 @@ function TimetableDiaryTable({ periods, entries, otherEntries = [], onSave, isLo
                 if (row.kind === 'period') {
                   const { period, idx } = row;
                   const existing    = matchEntry(period);
-                  const defaultNote = existing
-                    ? (existing.description || '')
-                        .replace(/^.+?\([^)]+\) - /, '')
-                        .replace(/^.+? - /, '')
-                    : '';
+                  const defaultNote = getExistingNote(period, existing);
                   const curNote    = notes[idx] !== undefined ? notes[idx] : defaultNote;
                   const statusStyle = existing ? STATUS_STYLES[existing.status] || {} : null;
                   const isSaved    = !!savedRows[idx];

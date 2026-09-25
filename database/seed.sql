@@ -36,7 +36,7 @@ VALUES
     'ADMIN001',
     'System Administrator',
     'Admin',
-    'B-Tech',
+    'B.Tech',
     'Computer Science & Engineering',
     'System Administrator',
     'admin@college.edu',

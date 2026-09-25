@@ -115,7 +115,8 @@ async function bulkCreateStudents(req, res) {
     return res.status(400).json({ success: false, message: `Excel parse error: ${err.message}` });
   }
 
-  const successRows = [];
+  // ─── PHASE 1: Parse and validate ALL rows ──────────────────────────────────
+  const validRows = [];
   const errorRows = [];
 
   for (let i = 0; i < rows.length; i++) {
@@ -135,34 +136,108 @@ async function bulkCreateStudents(req, res) {
     const counselorVal = rawCounselor ? String(rawCounselor).trim() : null;
 
     if (!rollVal || !nameVal || !deptVal || !yearVal) {
-      errorRows.push({ row: i + 1, data: row, error: 'Missing roll number, name, department, or year.' });
+      errorRows.push({ row: i + 2, error: 'Missing roll number, name, department, or year.' });
       continue;
     }
 
-    try {
-      // Check duplicate in db
-      const [dup] = await pool.query('SELECT id FROM students WHERE roll_number = ?', [rollVal]);
-      if (dup.length > 0) {
-        errorRows.push({ row: i + 1, roll_number: rollVal, error: 'Roll number already exists.' });
-        continue;
-      }
+    validRows.push({ rollVal, nameVal, deptVal, yearVal, secVal, counselorVal, _rowIndex: i });
+  }
 
-      await pool.query(
-        `INSERT INTO students (roll_number, name, department, year, section, counselor_id) 
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [rollVal, nameVal, deptVal, yearVal, secVal, counselorVal]
-      );
-      successRows.push({ roll_number: rollVal, name: nameVal });
-    } catch (err) {
-      errorRows.push({ row: i + 1, roll_number: rollVal, error: err.message });
+  if (validRows.length === 0) {
+    return res.json({
+      success: true,
+      message: `Processed ${rows.length} rows. Added: 0, Failed: ${errorRows.length}`,
+      added: 0,
+      failed: errorRows.length,
+      errors: errorRows
+    });
+  }
+
+  // ─── PHASE 2: Resolve existing rolls and optional counselors ─────────────────
+  const allRollNumbers = validRows.map(r => r.rollVal);
+  const [existingRows] = await pool.query(
+    'SELECT roll_number FROM students WHERE roll_number IN (?)',
+    [allRollNumbers]
+  );
+  const existingRolls = new Set(existingRows.map(r => String(r.roll_number).trim().toUpperCase()));
+
+  // counselor_id is optional and must reference users.employee_id.
+  // Some legacy files contain department/section labels such as IT, AID, CSE-A,
+  // rather than employee IDs. Convert those values to NULL so they do not make
+  // the whole INSERT batch fail on the foreign-key constraint.
+  const [userRows] = await pool.query('SELECT employee_id FROM users');
+  const validCounselorIds = new Set(userRows.map(r => String(r.employee_id).trim().toUpperCase()));
+  const unmappedCounselors = new Map();
+  for (const row of validRows) {
+    if (row.counselorVal) {
+      const normalizedCounselor = row.counselorVal.trim().toUpperCase();
+      if (validCounselorIds.has(normalizedCounselor)) {
+        row.counselorVal = normalizedCounselor;
+      } else {
+        unmappedCounselors.set(row.counselorVal, (unmappedCounselors.get(row.counselorVal) || 0) + 1);
+        row.counselorVal = null;
+      }
     }
   }
 
+  // Also check for duplicates within the upload itself
+  const seenInBatch = new Set();
+  const finalRows = [];
+
+  for (const row of validRows) {
+    if (existingRolls.has(row.rollVal)) {
+      errorRows.push({ row: row._rowIndex + 2, roll_number: row.rollVal, error: 'Roll number already exists in database.' });
+    } else if (seenInBatch.has(row.rollVal)) {
+      errorRows.push({ row: row._rowIndex + 2, roll_number: row.rollVal, error: 'Duplicate roll number in upload.' });
+    } else {
+      seenInBatch.add(row.rollVal);
+      finalRows.push(row);
+    }
+  }
+
+  // ─── PHASE 3: Batch INSERT (100 rows per query) ───────────────────────────
+  const BATCH_SIZE = 100;
+  const successRows = [];
+
+  for (let batch = 0; batch < finalRows.length; batch += BATCH_SIZE) {
+    const batchRows = finalRows.slice(batch, batch + BATCH_SIZE);
+    const values = batchRows.map(r => [r.rollVal, r.nameVal, r.deptVal, r.yearVal, r.secVal, r.counselorVal]);
+
+    try {
+      await pool.query(
+        `INSERT INTO students (roll_number, name, department, year, section, counselor_id) VALUES ?`,
+        [values]
+      );
+      successRows.push(...batchRows.map(r => ({ roll_number: r.rollVal, name: r.nameVal })));
+    } catch (err) {
+      // Fallback to individual inserts if batch fails
+      for (const row of batchRows) {
+        try {
+          await pool.query(
+            `INSERT INTO students (roll_number, name, department, year, section, counselor_id) VALUES (?, ?, ?, ?, ?, ?)`,
+            [row.rollVal, row.nameVal, row.deptVal, row.yearVal, row.secVal, row.counselorVal]
+          );
+          successRows.push({ roll_number: row.rollVal, name: row.nameVal });
+        } catch (e2) {
+          errorRows.push({ row: row._rowIndex + 2, roll_number: row.rollVal, error: e2.code === 'ER_DUP_ENTRY' ? 'Roll number already exists' : e2.message });
+        }
+      }
+    }
+  }
+
+  const warnings = [...unmappedCounselors.entries()].map(([value, count]) => ({
+    counselor_id: value,
+    rows: count,
+    warning: 'Counselor value is not a registered employee_id; student was added as unmapped.'
+  }));
+
   return res.json({
     success: true,
-    message: `Processed ${rows.length} rows. Added: ${successRows.length}, Failed: ${errorRows.length}`,
+    message: `Processed ${rows.length} rows. Added: ${successRows.length}, Failed: ${errorRows.length}${warnings.length ? `. ${warnings.reduce((sum, w) => sum + w.rows, 0)} rows were added without counselor mapping.` : ''}`,
+    processed: rows.length,
     added: successRows.length,
     failed: errorRows.length,
+    warnings,
     errors: errorRows
   });
 }
@@ -204,7 +279,7 @@ async function mapStudentsToCounselor(req, res) {
   }
 }
 
-// ─── COUNSELING DATA ENTRY (Faculty Counselor only) ───────────────────────────
+// ─── COUNSELING DATA ENTRY (Faculty Counselor / Department HOD) ────────────────
 
 // GET /api/counseling/students/:roll_number/records
 async function getStudentCounselingRecords(req, res) {
@@ -212,26 +287,53 @@ async function getStudentCounselingRecords(req, res) {
   const { role, department, employee_id } = req.user;
 
   try {
-    // Validate accessibility
-    const [student] = await pool.query('SELECT department, counselor_id FROM students WHERE roll_number = ?', [roll_number]);
-    if (student.length === 0) {
-      return res.status(404).json({ success: false, message: 'Student not found.' });
+    const normalizedRoll = String(roll_number || '').trim().toUpperCase();
+    // A student row may be gone while the counselling history remains. Use the
+    // latest snapshot for access checks in that case.
+    const [student] = await pool.query(
+      `SELECT department, counselor_id, name, year, section
+       FROM students WHERE roll_number = ?`,
+      [normalizedRoll]
+    );
+    const [historyContext] = await pool.query(
+      `SELECT student_department_snapshot AS department, counselor_id
+       FROM counseling_records
+       WHERE student_roll_number = ?
+       ORDER BY created_at DESC LIMIT 1`,
+      [normalizedRoll]
+    );
+    const studentContext = student[0] || historyContext[0];
+    if (!studentContext) {
+      return res.status(404).json({ success: false, message: 'Student or counselling history not found.' });
     }
 
-    if (role === 'HOD' && student[0].department !== department) {
+    if (role === 'HOD' && studentContext.department !== department) {
       return res.status(403).json({ success: false, message: 'Access denied. Student belongs to another department.' });
     }
-    if (role === 'Faculty' && student[0].counselor_id !== employee_id) {
-      return res.status(403).json({ success: false, message: 'Access denied. You are not mapped as counselor for this student.' });
+    if (role === 'Faculty' && studentContext.counselor_id !== employee_id) {
+      const [facultyHistory] = await pool.query(
+        `SELECT id FROM counseling_records
+         WHERE student_roll_number = ? AND counselor_id = ? LIMIT 1`,
+        [normalizedRoll, employee_id]
+      );
+      if (!facultyHistory.length) {
+        return res.status(403).json({ success: false, message: 'Access denied. You are not mapped as counselor for this student.' });
+      }
     }
 
     const [records] = await pool.query(
-      `SELECT cr.*, u.full_name AS counselor_name 
+      `SELECT cr.*,
+              COALESCE(s.name, cr.student_name_snapshot, '[Deleted student]') AS student_name,
+              COALESCE(s.department, cr.student_department_snapshot) AS student_department,
+              COALESCE(s.year, cr.student_year_snapshot) AS student_year,
+              COALESCE(s.section, cr.student_section_snapshot) AS student_section,
+              COALESCE(u.full_name, cr.counselor_name_snapshot, cr.counselor_id, 'Former counselor') AS counselor_name
        FROM counseling_records cr
-       JOIN users u ON cr.counselor_id = u.employee_id
+       LEFT JOIN students s ON cr.student_roll_number = s.roll_number
+       LEFT JOIN users u ON cr.counselor_id = u.employee_id
        WHERE cr.student_roll_number = ?
        ORDER BY cr.counseling_date DESC, cr.created_at DESC`,
-      [roll_number]
+      [normalizedRoll]
     );
 
     return res.json({ success: true, data: records });
@@ -243,27 +345,55 @@ async function getStudentCounselingRecords(req, res) {
 
 // POST /api/counseling/records
 async function createCounselingRecord(req, res) {
-  const { employee_id } = req.user;
+  const { employee_id, role, department, full_name } = req.user;
   const { student_roll_number, counseling_date, discussion_points, action_taken } = req.body;
+  const normalizedRoll = String(student_roll_number || '').trim().toUpperCase();
 
   if (!student_roll_number || !counseling_date || !discussion_points) {
     return res.status(400).json({ success: false, message: 'Required fields missing: student_roll_number, counseling_date, discussion_points.' });
   }
 
   try {
-    // Validate mapping (counselor must be this faculty)
-    const [student] = await pool.query('SELECT counselor_id FROM students WHERE roll_number = ?', [student_roll_number]);
+    // Faculty may record only for students mapped to them. An HOD may record
+    // for any student in the HOD's own department, including students mapped
+    // to one of that department's faculty counselors.
+    const [student] = await pool.query(
+      `SELECT name, department, counselor_id, year, section
+       FROM students WHERE roll_number = ?`,
+      [normalizedRoll]
+    );
     if (student.length === 0) {
       return res.status(404).json({ success: false, message: 'Student not found.' });
     }
-    if (student[0].counselor_id !== employee_id) {
+
+    if (role === 'Faculty' && student[0].counselor_id !== employee_id) {
       return res.status(403).json({ success: false, message: 'Access denied. You are not the mapped counselor for this student.' });
+    }
+    if (role === 'HOD' && student[0].department !== department) {
+      return res.status(403).json({ success: false, message: 'Access denied. Student belongs to another department.' });
+    }
+    if (role !== 'Faculty' && role !== 'HOD') {
+      return res.status(403).json({ success: false, message: 'Access denied. Only the mapped counselor or department HOD can add counselling reports.' });
     }
 
     await pool.query(
-      `INSERT INTO counseling_records (student_roll_number, counselor_id, counseling_date, discussion_points, action_taken)
-       VALUES (?, ?, ?, ?, ?)`,
-      [student_roll_number, employee_id, counseling_date, discussion_points.trim(), action_taken ? action_taken.trim() : null]
+      `INSERT INTO counseling_records
+        (student_roll_number, student_name_snapshot, student_department_snapshot,
+         student_year_snapshot, student_section_snapshot, counselor_id,
+         counselor_name_snapshot, counseling_date, discussion_points, action_taken)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        normalizedRoll,
+        student[0].name,
+        student[0].department,
+        student[0].year,
+        student[0].section,
+        employee_id,
+        full_name || employee_id,
+        counseling_date,
+        String(discussion_points).trim(),
+        action_taken ? String(action_taken).trim() : null,
+      ]
     );
 
     return res.status(201).json({ success: true, message: 'Counseling record saved successfully.' });
@@ -282,18 +412,22 @@ async function getCounselingReports(req, res) {
 
   try {
     let sql = `
-      SELECT cr.*, s.name AS student_name, s.department AS student_department, s.year, s.section,
-             u.full_name AS counselor_name
+      SELECT cr.*,
+             COALESCE(s.name, cr.student_name_snapshot, '[Deleted student]') AS student_name,
+             COALESCE(s.department, cr.student_department_snapshot) AS student_department,
+             COALESCE(s.year, cr.student_year_snapshot) AS year,
+             COALESCE(s.section, cr.student_section_snapshot) AS section,
+             COALESCE(u.full_name, cr.counselor_name_snapshot, cr.counselor_id, 'Former counselor') AS counselor_name
        FROM counseling_records cr
-       JOIN students s ON cr.student_roll_number = s.roll_number
-       JOIN users u ON cr.counselor_id = u.employee_id
+       LEFT JOIN students s ON cr.student_roll_number = s.roll_number
+       LEFT JOIN users u ON cr.counselor_id = u.employee_id
        WHERE 1=1
     `;
     const params = [];
 
     // Enforce role-based department visibility
     if (role === 'HOD') {
-      sql += ' AND s.department = ?';
+      sql += ' AND COALESCE(s.department, cr.student_department_snapshot) = ?';
       params.push(userDept);
     } else if (role === 'Faculty') {
       // HOD and Admin see all, Faculty sees their own mapped records
@@ -301,7 +435,7 @@ async function getCounselingReports(req, res) {
       params.push(req.user.employee_id);
     } else if (role === 'Admin') {
       if (department) {
-        sql += ' AND s.department = ?';
+        sql += ' AND COALESCE(s.department, cr.student_department_snapshot) = ?';
         params.push(department);
       }
     }
@@ -309,7 +443,7 @@ async function getCounselingReports(req, res) {
     // Filter criteria
     if (roll_number) {
       sql += ' AND cr.student_roll_number = ?';
-      params.push(roll_number.trim().toUpperCase());
+      params.push(String(roll_number).trim().toUpperCase());
     }
 
     if (counselor_id) {
@@ -344,9 +478,10 @@ async function resetAllStudents(req, res) {
   }
 
   try {
-    // Delete all students (cascades to delete counseling records)
+    // Student rows are roster data. Counselling records are historical data
+    // and intentionally remain available after the roster is cleared.
     await pool.query('DELETE FROM students');
-    return res.json({ success: true, message: 'All students and their counseling records have been cleared.' });
+    return res.json({ success: true, message: 'All students were removed from the roster. Counselling reports were preserved.' });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error resetting student list.' });

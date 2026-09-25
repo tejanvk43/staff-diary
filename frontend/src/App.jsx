@@ -37,6 +37,7 @@ import ProgramsPage       from './pages/Admin/ProgramsPage';
 import FacultyTimetableImportPage from './pages/Admin/FacultyTimetableImportPage';
 import SectionTimetablePage        from './pages/Admin/SectionTimetablePage';
 import CounselingPage             from './pages/CounselingPage';
+import MessagingPage              from './pages/MessagingPage';
 
 
 function App() {
@@ -86,6 +87,11 @@ function App() {
           <Route path="/counseling" element={
             <ProtectedRoute roles={['Admin', 'HOD', 'Faculty']}>
               <CounselingPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/messaging" element={
+            <ProtectedRoute roles={['Admin', 'HOD', 'Faculty']}>
+              <MessagingPage />
             </ProtectedRoute>
           } />
 

@@ -368,7 +368,7 @@ export default function SubjectsPage() {
       'Year', 'Semester', 'Sub Code', 'Sub Sname', 'Sub Name', 'Sub Type',
     ]];
     const example = [[
-      programs[0]?.name       || 'B-Tech',
+      programs[0]?.name       || 'B.Tech',
       'R20',
       departments[0]?.department_name || 'Computer Science and Engineering',
       departments[0]?.department_code || 'CSE',

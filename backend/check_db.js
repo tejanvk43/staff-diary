@@ -2,12 +2,8 @@ const pool = require('./src/config/db');
 
 async function main() {
   try {
-    const [adjustments] = await pool.query('SELECT * FROM class_adjustments');
-    console.log('All Class Adjustments in DB:', adjustments);
-
-    const [timetables] = await pool.query('SELECT * FROM timetables WHERE employee_id IN ("UR25070701", "99NG1A1252")');
-    console.log('Timetable slots for these users:', timetables);
-
+    const [tables] = await pool.query('SHOW TABLES');
+    console.log('Database tables:', tables.map(t => Object.values(t)[0]));
     process.exit(0);
   } catch (err) {
     console.error(err);

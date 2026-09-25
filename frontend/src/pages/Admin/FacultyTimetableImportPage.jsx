@@ -242,7 +242,7 @@ export default function FacultyTimetableImportPage() {
     ];
     const data = [
       {
-        'PROGRAM': 'B-Tech',
+        'PROGRAM': 'B.Tech',
         'DAY': 'Monday',
         'YEAR': '2',
         'Class & Section': 'CSE-A',
@@ -254,7 +254,7 @@ export default function FacultyTimetableImportPage() {
         'Period 6': 'WT - XY'
       },
       {
-        'PROGRAM': 'B-Tech',
+        'PROGRAM': 'B.Tech',
         'DAY': 'Tuesday',
         'YEAR': '2',
         'Class & Section': 'CSE-A',
@@ -546,183 +546,61 @@ export default function FacultyTimetableImportPage() {
                             return (
                               <td
                                 key={period}
-                                onClick={() => user?.role === 'Admin' && slots.length === 0 && openAdd(day, period)}
+                                onClick={() => slots.length === 0 && openAdd(day, period)}
                                 style={{
-                                  padding: 8, border: '1px solid var(--color-border)',
-                                  borderTop: 'none', borderLeft: 'none',
-                                  borderRight: isLastCol ? '1px solid var(--color-border)' : 'none',
+                                  padding: 6,
+                                  border: '1px solid var(--color-border)',
+                                  borderTop: 'none',
+                                  borderLeft: 'none',
                                   borderBottom: isLast ? '1px solid var(--color-border)' : 'none',
-                                  borderRadius: (isLast && isLastCol) ? '0 0 10px 0' : 0,
-                                  verticalAlign: 'top', background: 'var(--color-surface)',
-                                  cursor: (user?.role === 'Admin' && slots.length === 0) ? 'pointer' : 'default',
-                                  position: 'relative'
+                                  borderRadius: isLast && isLastCol ? '0 0 10px 0' : 0,
+                                  verticalAlign: 'top',
+                                  background: 'var(--color-bg)',
+                                  cursor: slots.length === 0 ? 'pointer' : 'default',
+                                  transition: 'background 0.15s',
+                                  minHeight: 80,
+                                  position: 'relative',
                                 }}
-                                onMouseEnter={e => { if (user?.role === 'Admin' && slots.length === 0) e.currentTarget.style.background = 'var(--color-surface-2)'; }}
-                                onMouseLeave={e => { if (user?.role === 'Admin' && slots.length === 0) e.currentTarget.style.background = 'var(--color-surface)'; }}
+                                onMouseEnter={e => { if (slots.length === 0) e.currentTarget.style.background = 'var(--color-surface-2)'; }}
+                                onMouseLeave={e => { if (slots.length === 0) e.currentTarget.style.background = 'var(--color-bg)'; }}
                               >
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                  {slots.map(s => (
-                                    <AdminSlotCell
-                                      key={s.id}
-                                      slot={s}
-                                      onEdit={openEdit}
-                                      onDelete={handleDeleteSlot}
-                                      isAdmin={user?.role === 'Admin'}
-                                    />
-                                  ))}
-                                  {user?.role === 'Admin' && slots.length === 0 && (
-                                    <div style={{
+                                {slots.length === 0 ? (
+                                  <div
+                                    className="empty-cell-hint"
+                                    style={{
                                       height: '100%', minHeight: 64, display: 'flex', alignItems: 'center',
                                       justifyContent: 'center', opacity: 0,
                                       transition: 'opacity 0.15s',
                                       color: 'var(--color-text-muted)', fontSize: '0.7rem',
                                     }}
-                                      className="empty-cell-hint"
-                                    >
-                                      <Plus size={14} />
-                                    </div>
-                                  )}
-                                </div>
+                                  >
+                                    <Plus size={14} />
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    {slots.map(s => (
+                                      <AdminSlotCell
+                                        key={s.id}
+                                        slot={s}
+                                        onEdit={openEdit}
+                                        onDelete={handleDeleteSlot}
+                                        isAdmin={user?.role === 'Admin' || user?.role === 'HOD'}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
                               </td>
                             );
                           })}
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {user?.role === 'Admin' && (
-            <div className="card" style={{ padding: 24, marginBottom: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--color-border)', paddingBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Calendar size={18} style={{ color: 'var(--color-primary)' }} />
-                  <h3 style={{ fontWeight: 700, fontSize: '1rem' }}>Manual Timetable Slot Overrides</h3>
-                </div>
-                <button className="btn btn-secondary" onClick={addTimetableSlot} style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
-                  <Plus size={14} /> Add Slot Row
-                </button>
-              </div>
-
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: 'none' }}>
-                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 60, padding: '10px 8px' }}>S.No</th>
-                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 140, padding: '10px 8px' }}>Day</th>
-                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 120, padding: '10px 8px' }}>From</th>
-                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 120, padding: '10px 8px' }}>To</th>
-                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', padding: '10px 8px' }}>Subject</th>
-                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 110, padding: '10px 8px' }}>Section</th>
-                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 110, padding: '10px 8px' }}>Room</th>
-                      <th style={{ color: 'var(--color-text-muted)', borderBottom: '2px solid var(--color-border)', width: 60, padding: '10px 8px' }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {timetableSlots.map((slot, idx) => (
-                      <tr key={slot.id || idx} style={{ background: 'none' }}>
-                        <td style={{ padding: '10px 8px', fontWeight: 600, color: 'var(--color-text-muted)', verticalAlign: 'middle' }}>
-                          {idx + 1}
-                        </td>
-                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
-                          <select
-                            className="input"
-                            style={{ padding: '8px', fontSize: '0.85rem' }}
-                            value={slot.day}
-                            onChange={e => updateTimetableSlot(slot.id, 'day', e.target.value)}
-                          >
-                            {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-                          </select>
-                        </td>
-                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
-                          <input
-                            type="time"
-                            className="input"
-                            style={{ padding: '7px 8px', fontSize: '0.85rem' }}
-                            value={slot.from_time ? slot.from_time.slice(0, 5) : ''}
-                            onChange={e => updateTimetableSlot(slot.id, 'from_time', e.target.value)}
-                          />
-                        </td>
-                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
-                          <input
-                            type="time"
-                            className="input"
-                            style={{ padding: '7px 8px', fontSize: '0.85rem' }}
-                            value={slot.to_time ? slot.to_time.slice(0, 5) : ''}
-                            onChange={e => updateTimetableSlot(slot.id, 'to_time', e.target.value)}
-                          />
-                        </td>
-                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
-                          <select
-                            className="input"
-                            style={{ padding: '8px', fontSize: '0.85rem' }}
-                            value={slot.subject_id || ''}
-                            onChange={e => updateTimetableSlot(slot.id, 'subject_id', e.target.value)}
-                          >
-                            <option value="">— Select Subject —</option>
-                            {allSubjects.map(sub => (
-                              <option key={sub.id} value={sub.id}>
-                                {sub.subject_code} - {sub.subject_name} ({sub.subject_type}) [{sub.education_type}]
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
-                          <select
-                            className="input"
-                            style={{ padding: '8px', fontSize: '0.85rem' }}
-                            value={slot.section || ''}
-                            onChange={e => updateTimetableSlot(slot.id, 'section', e.target.value)}
-                          >
-                            <option value="">— Select —</option>
-                            {[...new Set(allSections.map(sec => sec.section_name))].sort().map(secName => (
-                              <option key={secName} value={secName}>{secName}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
-                          <input
-                            className="input"
-                            style={{ padding: '8px', fontSize: '0.85rem' }}
-                            value={slot.room_number || ''}
-                            onChange={e => updateTimetableSlot(slot.id, 'room_number', e.target.value)}
-                            placeholder="e.g. D-101"
-                          />
-                        </td>
-                        <td style={{ padding: '10px 8px', textAlign: 'center', verticalAlign: 'middle' }}>
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            onClick={() => removeTimetableSlot(slot.id)}
-                            style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger)', border: '1px solid rgba(239,68,68,0.2)', padding: 7 }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {timetableSlots.length === 0 && (
-                      <tr>
-                        <td colSpan={8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--color-text-muted)', fontSize: '0.88rem' }}>
-                          No weekly timetable slots override configured for this faculty.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
-                <button className="btn btn-primary" onClick={handleSaveTimetable} disabled={saving}>
-                  {saving ? <Loader2 size={14} className="spinner" /> : <Save size={14} />} Save Timetable Overrides
-                </button>
-              </div>
-            </div>
-          )}
-        </>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      </>
       )}
 
       {/* Bulk Import Summary Modal */}

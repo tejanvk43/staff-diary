@@ -51,6 +51,10 @@ export default function CounselingPage() {
 
   // Counseling record state (modal & data entry)
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const canLogForSelectedStudent = selectedStudent && (
+    (isHod && selectedStudent.department === user?.department) ||
+    (isFaculty && selectedStudent.counselor_id === user?.employee_id)
+  );
   const [records, setRecords] = useState([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [newRecord, setNewRecord] = useState({
@@ -297,6 +301,11 @@ export default function CounselingPage() {
     
     // Scopes
     if (activeTab === 'my-students') {
+      // HODs supervise the mapped students in their department; faculty see
+      // only students mapped directly to their own employee ID.
+      if (isHod) {
+        return s.department === user.department && Boolean(s.counselor_id) && matchesSearch;
+      }
       return s.counselor_id === user.employee_id && matchesSearch;
     }
     
@@ -505,6 +514,7 @@ export default function CounselingPage() {
               <table className="table">
                 <thead>
                   <tr>
+                    <th style={{ width: 50, textAlign: 'center' }}>S.No.</th>
                     {isHod && (
                       <th style={{ width: 50, textAlign: 'center' }}>
                         <button
@@ -530,14 +540,15 @@ export default function CounselingPage() {
                 <tbody>
                   {filteredStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--color-text-muted)' }}>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--color-text-muted)' }}>
                         <AlertCircle size={28} style={{ margin: '0 auto 10px', display: 'block' }} />
                         No students found matching filters.
                       </td>
                     </tr>
                   ) : (
-                    filteredStudents.map(s => (
+                    filteredStudents.map((s, idx) => (
                       <tr key={s.id} style={{ background: selectedRollNumbers.includes(s.roll_number) ? 'rgba(99,102,241,0.05)' : '' }}>
+                        <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{idx + 1}</td>
                         {isHod && (
                           <td style={{ textAlign: 'center' }}>
                             <button
@@ -574,9 +585,9 @@ export default function CounselingPage() {
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                            <button className="btn btn-sm btn-secondary" onClick={() => openCounsellingModal(s)}>
-                              <BookOpen size={13} />
-                              View Logs
+                            <button className={`btn btn-sm ${isHod ? 'btn-primary' : 'btn-secondary'}`} onClick={() => openCounsellingModal(s)}>
+                              {isHod ? <Plus size={13} /> : <BookOpen size={13} />}
+                              {isHod ? 'Add Counselling Report' : 'View Logs'}
                             </button>
                             {isAdmin && (
                               <button className="btn btn-sm btn-secondary" style={{ color: 'var(--color-danger)', borderColor: '#fca5a5' }} onClick={() => handleDeleteStudent(s.id, s.roll_number)}>
@@ -614,33 +625,35 @@ export default function CounselingPage() {
 
           <div className="table-responsive">
             <table className="table">
-              <thead>
-                <tr>
-                  <th>Roll Number</th>
-                  <th>Name</th>
-                  <th>Dept / Year / Sec</th>
-                  <th style={{ width: 180, textAlign: 'center' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredStudents.length === 0 ? (
+                <thead>
                   <tr>
-                    <td colSpan={4} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--color-text-muted)' }}>
-                      No students mapped to you as counselor.
-                    </td>
+                    <th style={{ width: 50, textAlign: 'center' }}>S.No.</th>
+                    <th>Roll Number</th>
+                    <th>Name</th>
+                    <th>Dept / Year / Sec</th>
+                    <th style={{ width: 180, textAlign: 'center' }}>Action</th>
                   </tr>
-                ) : (
-                  filteredStudents.map(s => (
-                    <tr key={s.id}>
-                      <td style={{ fontWeight: 700, fontSize: '0.85rem' }}>{s.roll_number}</td>
+                </thead>
+                <tbody>
+                  {filteredStudents.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--color-text-muted)' }}>
+                        No students mapped to you as counselor.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredStudents.map((s, idx) => (
+                      <tr key={s.id}>
+                        <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{idx + 1}</td>
+                        <td style={{ fontWeight: 700, fontSize: '0.85rem' }}>{s.roll_number}</td>
                       <td style={{ fontWeight: 600 }}>{s.name}</td>
                       <td style={{ fontSize: '0.80rem' }}>
                         {s.department} (Year {s.year} - Sec {s.section || 'N/A'})
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <button className="btn btn-sm btn-primary" onClick={() => openCounsellingModal(s)}>
-                          <Sparkles size={13} />
-                          Mentoring &amp; Log Entry
+                          <Plus size={13} />
+                          Add Counselling Report
                         </button>
                       </td>
                     </tr>
@@ -795,12 +808,12 @@ export default function CounselingPage() {
               <button className="btn btn-secondary" onClick={() => setSelectedStudent(null)}>Close</button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: isFaculty && selectedStudent.counselor_id === user.employee_id ? '4fr 5fr' : '1fr', gap: 24, maxHeight: '60vh', overflowY: 'auto', paddingRight: 6 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: canLogForSelectedStudent ? '4fr 5fr' : '1fr', gap: 24, maxHeight: '60vh', overflowY: 'auto', paddingRight: 6 }}>
               
-              {/* Form on Left for faculty counselor only */}
-              {isFaculty && selectedStudent.counselor_id === user.employee_id && (
+              {/* Form on Left for the mapped faculty counselor or department HOD */}
+              {canLogForSelectedStudent && (
                 <form onSubmit={handleRecordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14, borderRight: '1px solid var(--color-border)', paddingRight: 20 }}>
-                  <h4 style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-primary-light)', margin: 0 }}>📝 Log Counseling Session</h4>
+                  <h4 style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-primary-light)', margin: 0 }}>📝 Add Counselling Report</h4>
                   
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" htmlFor="rec-date">Session Date *</label>
@@ -1008,6 +1021,14 @@ export default function CounselingPage() {
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>Results:</div>
                   <div style={{ color: 'var(--color-success)' }}>✅ Successfully Added: {bulkResult.added}</div>
                   <div style={{ color: 'var(--color-danger)' }}>❌ Failed: {bulkResult.failed}</div>
+                  {bulkResult.warnings?.length > 0 && (
+                    <div style={{ marginTop: 8, color: 'var(--color-warning, #b7791f)', fontSize: '0.78rem' }}>
+                      ⚠️ {bulkResult.warnings.reduce((sum, warning) => sum + (warning.rows || 0), 0)} student(s) were added without counselor mapping because the uploaded counselor values are not registered employee IDs.
+                      <div style={{ marginTop: 4, color: 'var(--color-text-muted)' }}>
+                        Values: {bulkResult.warnings.map(warning => warning.counselor_id).join(', ')}
+                      </div>
+                    </div>
+                  )}
                   {bulkResult.errors?.length > 0 && (
                     <div style={{ marginTop: 10, maxHeight: 120, overflowY: 'auto', fontSize: '0.75rem', background: 'var(--color-bg)', padding: 6, borderRadius: 4 }}>
                       {bulkResult.errors.map((err, idx) => (

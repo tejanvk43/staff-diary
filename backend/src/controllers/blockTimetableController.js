@@ -42,7 +42,7 @@ async function createBlockTimetable(req, res) {
     const [result] = await pool.query(
       `INSERT INTO block_timetables (name, department, education_type, year, section, academic_year, created_by, source)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`,
-      [name.trim(), department || 'General', education_type || 'B-Tech', year || 1, section || null, academic_year || null, employee_id]
+      [name.trim(), department || 'General', education_type || 'B.Tech', year || 1, section || null, academic_year || null, employee_id]
     );
     return res.status(201).json({ success: true, id: result.insertId, message: 'Block timetable created.' });
   } catch (err) {
@@ -180,9 +180,19 @@ async function addSlot(req, res) {
     );
     return res.status(201).json({ success: true, id: result.insertId, message: 'Slot added.' });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ success: false, message: 'Server error.' });
-  }
+  console.error("========== ADD SLOT ERROR ==========");
+  console.error(err);
+  console.error("Message:", err.message);
+  console.error("Code:", err.code);
+  console.error("SQL Message:", err.sqlMessage);
+
+  return res.status(500).json({
+    success: false,
+    message: err.message,
+    code: err.code,
+    sqlMessage: err.sqlMessage
+  });
+}
 }
 
 // ─── PUT /api/admin/block-timetables/:id/slots/:slotId ───────────────────────
@@ -339,7 +349,7 @@ async function bulkImportTimetable(req, res) {
     if (!rawProg || !rawYear || !rawSection) continue;
 
     let prog = String(rawProg).trim().replace(/\./g, '-');
-    if (prog.toLowerCase() === 'btech' || prog.toLowerCase() === 'b-tech') prog = 'B-Tech';
+    if (prog.toLowerCase() === 'btech' || prog.toLowerCase() === 'b-tech') prog = 'B.Tech';
     if (prog.toLowerCase() === 'mtech' || prog.toLowerCase() === 'm-tech') prog = 'M-Tech';
     if (prog.toLowerCase() === 'diploma') prog = 'Diploma';
     const yrMatch = String(rawYear).match(/\d+/);
@@ -430,7 +440,7 @@ async function bulkImportTimetable(req, res) {
 
     // Period mappings
     const PERIOD_TEMPLATES = {
-      'B-Tech': {
+      'B.Tech': {
         1: { from_time: '08:40:00', to_time: '09:40:00', label: 'Period 1' },
         2: { from_time: '09:40:00', to_time: '10:40:00', label: 'Period 2' },
         3: { from_time: '11:10:00', to_time: '12:10:00', label: 'Period 3' },
@@ -528,7 +538,7 @@ async function bulkImportTimetable(req, res) {
 
       // Normalize values
       let programName = String(rawProg).trim().replace(/\./g, '-');
-      if (programName.toLowerCase() === 'btech' || programName.toLowerCase() === 'b-tech') programName = 'B-Tech';
+      if (programName.toLowerCase() === 'btech' || programName.toLowerCase() === 'b-tech') programName = 'B.Tech';
       if (programName.toLowerCase() === 'mtech' || programName.toLowerCase() === 'm-tech') programName = 'M-Tech';
       if (programName.toLowerCase() === 'diploma') programName = 'Diploma';
 
@@ -718,7 +728,7 @@ async function bulkImportTimetable(req, res) {
         }
 
         if (!fromTime || !toTime) {
-          const progKey = PERIOD_TEMPLATES[programName] ? programName : 'B-Tech';
+          const progKey = PERIOD_TEMPLATES[programName] ? programName : 'B.Tech';
           const template = PERIOD_TEMPLATES[progKey][periodIndex];
           if (template) {
             fromTime = template.from_time;
@@ -746,16 +756,22 @@ async function bulkImportTimetable(req, res) {
             [facultyId, blockId, subject.id, subject.subject_code, dayName, fromTime, toTime, subject.subject_type, programName, yearNumber, sectionName]
           );
 
-          const [existingAssign] = await conn.query(
-            'SELECT id FROM faculty_block_assignments WHERE employee_id = ? AND block_id = ?',
-            [facultyId, blockId]
-          );
-          if (!existingAssign.length) {
-            await conn.query(
-              'INSERT INTO faculty_block_assignments (employee_id, block_id) VALUES (?, ?)',
-              [facultyId, blockId]
-            );
-          }
+const [existingAssign] = await conn.query(
+  `SELECT id
+   FROM faculty_block_assignments
+   WHERE employee_id = ?
+     AND block_id = ?`,
+  [facultyId, blockId]
+);
+
+if (existingAssign.length === 0) {
+  await conn.query(
+    `INSERT INTO faculty_block_assignments
+      (employee_id, block_id)
+     VALUES (?, ?)`,
+    [facultyId, blockId]
+  );
+}
 
           const [existingCourse] = await conn.query(
             'SELECT id FROM faculty_courses WHERE employee_id = ? AND education_type = ? AND year = ? AND section = ?',
@@ -802,7 +818,12 @@ async function bulkImportTimetable(req, res) {
   } catch (err) {
     await conn.rollback();
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Server error during timetable import.' });
+    return res.status(500).json({     success: false,
+    message: 'Server error during timetable import.',
+    error: err.message,
+    code: err.code,
+    sqlMessage: err.sqlMessage,
+    sql: err.sql});
   } finally {
     conn.release();
   }

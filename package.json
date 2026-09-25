@@ -1,19 +1,20 @@
 {
   "name": "staff-diary",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
   "description": "College Staff Daily Activity Recording System — Backend",
+  "main": "index.js",
   "scripts": {
-    "start":   "node backend/server.js",
-    "dev":     "node backend/server.js",
-    "test":    "echo \"No tests specified\" && exit 1"
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js",
+    "migrate": "node backend/run_all_migrations.js",
+    "test": "echo \"No tests specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
@@ -22,6 +23,7 @@
     "jspdf": "^4.2.1",
     "multer": "^2.1.1",
     "mysql2": "^3.22.3",
+    "nodemon": "^3.1.14",
     "xlsx": "^0.18.5"
   }
 }

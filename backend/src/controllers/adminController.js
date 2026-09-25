@@ -474,8 +474,8 @@ function validateSectionRow(row, index) {
     errors.push(`Row ${index}: missing education_type`);
   } else {
     const et = String(row.education_type).trim();
-    if (!['B-Tech', 'Diploma', 'M-Tech'].includes(et)) {
-      errors.push(`Row ${index}: invalid education_type '${et}' (must be 'B-Tech', 'Diploma', or 'M-Tech')`);
+    if (!['B.Tech','M.Tech','Ph.D','M.Sc','M.Phil', 'M-Tech'].includes(et)) {
+      errors.push(`Row ${index}: invalid education_type '${et}' (must be 'B.Tech','M.Tech','Ph.D','M.Sc','M.Phil', or 'M-Tech')`);
     }
   }
   if (row.year === undefined || row.year === null || String(row.year).trim() === '') {
@@ -569,7 +569,7 @@ async function bulkUploadSections(req, res) {
 
 async function getPrograms(req, res) {
   try {
-    const [rows] = await pool.query('SELECT * FROM programs ORDER BY name');
+    const [rows] = await pool.query('SELECT * FROM programs');
     return res.json({ success: true, data: rows });
   } catch (err) {
     console.error(err);

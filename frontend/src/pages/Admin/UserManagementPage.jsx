@@ -96,15 +96,15 @@ function AddUserModal({ onClose, onSave, departments }) {
 // ─── Edit User Modal ────────────────────────────────────────────────────────────────────────────────────
 function EditUserModal({ user, onClose, onSave, departments }) {
   const [form, setForm] = useState({
-    full_name:             user.full_name             || '',
-    short_name:            user.short_name            || '',
-    highest_qualification: user.highest_qualification || '',
-    department:            user.department            || '',
-    designation:           user.designation           || '',
-    phone_number:          user.phone_number          || '',
-    email:                 user.email                 || '',
-    role:                  user.role                  || 'Faculty',
-    is_first_login:        user.is_first_login ? true : false,
+    full_name:      user.full_name      || '',
+    short_name:     user.short_name     || '',
+    highest_qualification: user.highest_qualification || user.education_type || '',
+    department:     user.department     || '',
+    designation:    user.designation    || '',
+    phone_number:   user.phone_number   || '',
+    email:          user.email          || '',
+    role:           user.role           || 'Faculty',
+    is_first_login: user.is_first_login ? true : false,
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -112,7 +112,7 @@ function EditUserModal({ user, onClose, onSave, departments }) {
   const handleSave = async () => {
     if (!form.full_name.trim()) { toast.error('Full name is required.'); return; }
     if (!form.department)       { toast.error('Department is required.'); return; }
-    if (!form.highest_qualification.trim()) { toast.error('Qualification is required.'); return; }
+    if (!form.highest_qualification?.trim()) { toast.error('Qualification is required.'); return; }
     setSaving(true);
     try {
       await onSave(user.employee_id, form);
@@ -518,28 +518,97 @@ export default function UserManagementPage() {
   const fileRef = useRef();
 
   const [programs, setPrograms]   = useState([]);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   // Bank Requests states
   const [bankRequests, setBankRequests] = useState([]);
   const [showBankRequests, setShowBankRequests] = useState(false);
 
   const downloadUserTemplate = () => {
-    const data = [
+    const headers = [
+      'employee_id',
+      'full_name',
+      'short_name',
+      'education_type',
+      'department',
+      'designation',
+      'phone_number',
+      'email',
+      'role',
+      'password'
+    ];
+
+    const sampleData = [
       {
         employee_id: 'FAC001',
-        full_name: 'Dr. Jane Doe',
-        short_name: 'JD',
-        highest_qualification: 'Ph.D',
+        full_name: 'Dr. Rajesh Kumar',
+        short_name: 'RK',
+        education_type: 'Ph.D',
         department: 'Computer Science & Engineering',
-        designation: 'Professor',
+        designation: 'Associate Professor',
         phone_number: '9876543210',
+        email: 'rajesh.kumar@college.edu',
         role: 'Faculty',
-        password: 'ChangeMe123'
+        password: 'Faculty@123'
+      },
+      {
+        employee_id: 'HOD001',
+        full_name: 'Dr. Sunita Sharma',
+        short_name: 'SS',
+        education_type: 'Ph.D',
+        department: 'Electronics & Communication Engineering',
+        designation: 'Professor & HOD',
+        phone_number: '9876543211',
+        email: 'sunita.sharma@college.edu',
+        role: 'HOD',
+        password: 'HOD@123'
+      },
+      {
+        employee_id: 'FAC002',
+        full_name: 'Mr. Vikram Singh',
+        short_name: 'VS',
+        education_type: 'B-Tech',
+        department: 'Mechanical Engineering',
+        designation: 'Assistant Professor',
+        phone_number: '9876543212',
+        email: 'vikram.singh@college.edu',
+        role: 'Faculty',
+        password: 'Faculty@123'
+      },
+      {
+        employee_id: 'ADMIN002',
+        full_name: 'Ms. Priya Reddy',
+        short_name: 'PR',
+        education_type: 'M-Tech',
+        department: 'Information Technology',
+        designation: 'System Administrator',
+        phone_number: '9876543213',
+        email: 'priya.reddy@college.edu',
+        role: 'Admin',
+        password: 'Admin@123'
       }
     ];
-    const ws = XLSX.utils.json_to_sheet(data);
+
+    const ws = XLSX.utils.json_to_sheet(sampleData, { header: headers });
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    XLSX.utils.book_append_sheet(wb, ws, 'User Template');
+
+    // Add an Instructions sheet
+    const instructions = [
+      { Field: 'employee_id', Required: 'Yes', Description: 'Unique ID, e.g. FAC001, HOD001' },
+      { Field: 'full_name', Required: 'Yes', Description: 'Full name of the user' },
+      { Field: 'short_name', Required: 'No', Description: 'Abbreviated name, e.g. RK, SS' },
+      { Field: 'education_type', Required: 'Yes', Description: 'B-Tech / M-Tech / Ph.D / Diploma' },
+      { Field: 'department', Required: 'Yes', Description: 'Full department name (must match existing departments)' },
+      { Field: 'designation', Required: 'No', Description: 'e.g. Assistant Professor, Professor' },
+      { Field: 'phone_number', Required: 'No', Description: '10-digit mobile number' },
+      { Field: 'email', Required: 'No', Description: 'If blank, auto-generated as employee_id@college.edu' },
+      { Field: 'role', Required: 'Yes', Description: 'Faculty / HOD / Admin' },
+      { Field: 'password', Required: 'No', Description: 'Temporary password (defaults to employee_id if blank)' },
+    ];
+    const wsInstr = XLSX.utils.json_to_sheet(instructions);
+    XLSX.utils.book_append_sheet(wb, wsInstr, 'Instructions');
+
     XLSX.writeFile(wb, 'users_bulk_template.xlsx');
   };
 
@@ -673,6 +742,29 @@ export default function UserManagementPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleDeleteAllUsers = async () => {
+    if (!confirm('⚠️ DANGER: This will permanently delete ALL non-Admin users and their associated data (diary entries, leave requests, OD requests, timetables, notifications, student records, etc.). Admin users will be PRESERVED. This action CANNOT be undone.\n\nAre you absolutely sure you want to proceed?')) return;
+    if (!confirm('Final confirmation: This will delete all Faculty and HOD users. Only Admin accounts will remain.')) return;
+
+    const confirmation = prompt('Type DELETE to confirm deletion of ALL non-Admin users:');
+    if (confirmation !== 'DELETE') {
+      toast.error('Deletion cancelled. You must type DELETE to confirm.');
+      return;
+    }
+
+    setDeletingAll(true);
+    const toastId = toast.loading('Deleting all users...');
+    try {
+      const res = await api.delete('/api/admin/users/all');
+      toast.success(res.data.message || 'All users deleted successfully.', { id: toastId });
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete all users.', { id: toastId });
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
   const handleExportUsers = () => {
     const toastId = toast.loading('Generating Excel file...');
     api.get('/api/admin/users/export', { responseType: 'blob' })
@@ -752,6 +844,16 @@ export default function UserManagementPage() {
           )}
           {!isHod && (
             <button
+              className="btn"
+              style={{ background: 'var(--color-danger)', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={handleDeleteAllUsers}
+              disabled={deletingAll}
+            >
+              {deletingAll ? <Loader2 size={14} className="spinner" /> : <Trash2 size={14} />} Delete All Users
+            </button>
+          )}
+          {!isHod && (
+            <button
               className="btn btn-secondary"
               onClick={() => setShowBankRequests(true)}
               style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6 }}
@@ -819,6 +921,7 @@ export default function UserManagementPage() {
           <table>
             <thead>
               <tr>
+                <th style={{ width: 50, textAlign: 'center' }}>S.No.</th>
                 {!isHod && (
                   <th style={{ width: 44, textAlign: 'center' }}>
                     <input
@@ -838,8 +941,9 @@ export default function UserManagementPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(u => (
+              {filtered.map((u, idx) => (
                 <tr key={u.employee_id}>
+                  <td style={{ textAlign: 'center', fontWeight: 600, fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{idx + 1}</td>
                   {!isHod && (
                     <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                       <input
@@ -916,7 +1020,7 @@ export default function UserManagementPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-muted)' }}>No users found</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--color-text-muted)' }}>No users found</td></tr>
               )}
             </tbody>
           </table>

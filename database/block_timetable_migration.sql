@@ -1,4 +1,5 @@
--- ============================================================
+ 
+ -- ============================================================
 -- Migration: Block (Class) Timetables
 -- Run this against the college_diary database
 -- ============================================================
@@ -10,7 +11,7 @@ CREATE TABLE IF NOT EXISTS block_timetables (
   id             INT AUTO_INCREMENT PRIMARY KEY,
   name           VARCHAR(100)  NOT NULL,                          -- e.g. "CSE-A 2nd Year"
   department     VARCHAR(100)  NOT NULL,
-  education_type ENUM('B-Tech','Diploma') DEFAULT 'B-Tech',
+  education_type ENUM('B.Tech','M.Tech','Ph.D','M.Sc','M.Phil') DEFAULT 'B.Tech',
   year           TINYINT       NOT NULL DEFAULT 1,
   section        VARCHAR(10)   DEFAULT NULL,                      -- A, B, C …
   academic_year  VARCHAR(20)   DEFAULT NULL,                      -- 2024-25

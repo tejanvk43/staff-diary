@@ -12,7 +12,7 @@ echo.
 
 REM Start backend
 echo [1/2] Starting Backend (port 5000)...
-start "Staff Diary - Backend" cmd /k "cd /d %~dp0 && node backend\server.js"
+start "Staff Diary - Backend" cmd /k "cd /d %~dp0\.. && npx nodemon backend\server.js"
 
 REM Wait a moment for backend to initialize
 timeout /t 3 /nobreak >nul

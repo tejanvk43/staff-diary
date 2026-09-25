@@ -116,7 +116,7 @@ export default function ReportsPage() {
                 key={r.key}
                 id={`report-tab-${r.key}`}
                 className={`sidebar-item ${reportType === r.key ? 'active' : ''}`}
-                style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                style={{ width: '100%', cursor: 'pointer', textAlign: 'left' }}
                 onClick={() => { setReportType(r.key); setResults(null); }}
               >
                 <BarChart2 size={14} /> {r.label}

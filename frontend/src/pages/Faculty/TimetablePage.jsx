@@ -172,7 +172,7 @@ function SlotModal({ slot, day, fromTime, onClose, onSave, myBlocks, myCourses, 
     ? mySubjects.filter(s => s.education_type === parsedCourse.education_type)
     : mySubjects;
 
-  const EDU_COLORS = { Diploma: '#f59e0b', 'B-Tech': '#6366f1', 'M-Tech': '#8b5cf6' };
+  const EDU_COLORS = { Diploma: '#f59e0b', 'B.Tech': '#6366f1', 'M-Tech': '#8b5cf6' };
 
   const handleSave = async () => {
     if (!blockId)   { toast.error('Select a block.'); return; }
@@ -412,7 +412,7 @@ function SlotCell({ slot, onEdit, onDelete }) {
 
       {/* Class label */}
       <div style={{ color: 'var(--color-text-muted)', fontSize: '0.66rem', lineHeight: 1.3, paddingRight: 24 }}>
-        ({slot.education_type === 'B-Tech' ? 'B.Tech' : slot.education_type} {yrLabel} {semLabel}{secLabel})
+        ({slot.education_type === 'B.Tech' ? 'B.Tech' : slot.education_type} {yrLabel} {semLabel}{secLabel})
       </div>
 
       {/* Timing and Block */}

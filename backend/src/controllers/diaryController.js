@@ -315,11 +315,20 @@ async function updateEntry(req, res) {
       return res.status(409).json({ success: false, message: 'Time overlaps with an existing diary entry.' });
     }
 
+    // The client may intentionally send an empty description to clear the
+    // generated subject label. Do not turn that empty value into NULL before
+    // COALESCE, otherwise the previous default text is silently restored.
+    const nextDescription = description === undefined || description === null
+      ? entry.description
+      : (String(description).trim() || null);
+    const nextFromTime = from_time || entry.from_time;
+    const nextToTime = to_time || entry.to_time;
+    const nextActivityType = activity_type || entry.activity_type;
+
     await pool.query(
-      `UPDATE diary_logs SET from_time=COALESCE(?,from_time), to_time=COALESCE(?,to_time),
-       description=COALESCE(?,description), activity_type=COALESCE(?,activity_type)
+      `UPDATE diary_logs SET from_time=?, to_time=?, description=?, activity_type=?
        WHERE id = ?`,
-      [from_time||null, to_time||null, description||null, activity_type||null, id]
+      [nextFromTime, nextToTime, nextDescription, nextActivityType, id]
     );
 
     const [updated] = await pool.query('SELECT * FROM diary_logs WHERE id = ?', [id]);
