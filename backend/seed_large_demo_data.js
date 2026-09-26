@@ -45,7 +45,10 @@ async function seedLargeDemoData() {
 
     for (let staffIndex = 1; staffIndex <= 5; staffIndex += 1) {
       const employeeId = `FAC${departmentCode}${String(staffIndex).padStart(2, '0')}`;
-      const fullName = `${['Ananya', 'Bharat', 'Chaitanya', 'Divya', 'Eshan'][staffIndex - 1]} ${departmentCode} Faculty`;
+      const firstName = departmentCode === 'IT' && staffIndex === 2
+        ? 'Bharath'
+        : ['Ananya', 'Bharat', 'Chaitanya', 'Divya', 'Eshan'][staffIndex - 1];
+      const fullName = `${firstName} ${departmentCode} Faculty`;
       await pool.query(
         `INSERT INTO users
           (employee_id, full_name, short_name, highest_qualification, department, designation, email, password_hash, role, is_first_login)
@@ -166,6 +169,25 @@ async function seedLargeDemoData() {
          WHERE NOT EXISTS (SELECT 1 FROM diary_logs WHERE employee_id = ? AND log_date = ? AND description = ?)`,
         [member.employeeId, logDate, logDate, slot[0], logDate, slot[1], description, historyDay % 3 === 0 ? 'Meeting' : 'Teaching', historyDay % 4 === 0 ? 'Submitted' : 'Approved', member.employeeId, logDate, description]
       );
+    }
+
+    if (member.employeeId === 'FACIT02') {
+      const periods = [
+        ['09:00:00', '10:00:00', 'Teaching', 'Conducted IT theory lecture for B.Tech IT-A.'],
+        ['10:15:00', '11:15:00', 'Lab Work', 'Supervised programming laboratory for B.Tech IT-A.'],
+        ['14:00:00', '15:00:00', 'Research', 'Reviewed student projects and research progress.'],
+      ];
+      for (let historyDay = 1; historyDay <= 3; historyDay += 1) {
+        const logDate = dateOffset(historyDay);
+        for (const [fromTime, toTime, activityType, description] of periods) {
+          await pool.query(
+            `INSERT INTO diary_logs (employee_id, log_date, from_time, to_time, description, activity_type, status, reviewed_by, reviewed_at, remarks)
+             SELECT ?, ?, CONCAT(?, ' ', ?), CONCAT(?, ' ', ?), ?, ?, 'Approved', 'HOD001', NOW(), 'Multi-period Bharath demo record'
+             WHERE NOT EXISTS (SELECT 1 FROM diary_logs WHERE employee_id = ? AND log_date = ? AND description = ?)`,
+            [member.employeeId, logDate, logDate, fromTime, logDate, toTime, description, activityType, member.employeeId, logDate, description]
+          );
+        }
+      }
     }
   }
 

@@ -2,9 +2,22 @@ const pool = require('../config/db');
 const { generateExcelBuffer, generateStaffDiaryReportBuffer } = require('../utils/excelParser');
 
 function minutesBetween(fromTime, toTime) {
+  const toMinutes = value => {
+    const text = String(value);
+    const match = text.match(/(?:T|\s)(\d{2}):(\d{2})(?::(\d{2}))?/);
+    return match ? (Number(match[1]) * 60) + Number(match[2]) + (Number(match[3] || 0) / 60) : null;
+  };
+  const fromMinutes = toMinutes(fromTime);
+  const toMinutesValue = toMinutes(toTime);
+  if (fromMinutes !== null && toMinutesValue !== null) {
+    return Math.max(0, Math.round(toMinutesValue - fromMinutes));
+  }
+
   const from = new Date(String(fromTime).replace(' ', 'T'));
   const to = new Date(String(toTime).replace(' ', 'T'));
-  return Math.max(0, Math.round((to - from) / 60000));
+  return Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())
+    ? 0
+    : Math.max(0, Math.round((to - from) / 60000));
 }
 
 function formatHours(minutes) {
@@ -56,7 +69,10 @@ async function buildStaffDiaryTemplate(employeeId, fromDate, toDate, diaryRows) 
   let labMinutes = 0;
   let otherMinutes = 0;
   const detailRows = diaryRows.map((row, index) => {
-    const minutes = minutesBetween(row.from_time, row.to_time);
+    const databaseMinutes = Number(row.duration_minutes);
+    const minutes = Number.isFinite(databaseMinutes)
+      ? Math.max(0, databaseMinutes)
+      : minutesBetween(row.from_time, row.to_time);
     if (row.activity_type === 'Teaching') theoryMinutes += minutes;
     else if (row.activity_type === 'Lab Work') labMinutes += minutes;
     else otherMinutes += minutes;
@@ -67,7 +83,15 @@ async function buildStaffDiaryTemplate(employeeId, fromDate, toDate, diaryRows) 
       classSection: row.activity_type === 'Teaching' ? 'Regular Class' : row.activity_type,
       description: row.description || '',
       hours: formatHours(minutes),
+      durationMinutes: minutes,
     };
+  });
+  const dailyMinutes = detailRows.reduce((totals, row) => {
+    totals[row.date] = (totals[row.date] || 0) + row.durationMinutes;
+    return totals;
+  }, {});
+  detailRows.forEach(row => {
+    row.dailyHours = formatHours(dailyMinutes[row.date]);
   });
 
   return {
@@ -89,14 +113,15 @@ async function buildStaffDiaryTemplate(employeeId, fromDate, toDate, diaryRows) 
 // ─── GET /api/reports/diary ───────────────────────────────────────────────────
 async function diaryReport(req, res) {
   const { employee_id: selfId, role, department } = req.user;
-  const { employee_id, from_date, to_date, format } = req.query;
+  const { employee_id, from_date, to_date, format, template, merged } = req.query;
 
   if (!from_date || !to_date) {
     return res.status(400).json({ success: false, message: 'from_date and to_date are required.' });
   }
 
   try {
-    let sql = `SELECT d.*, u.full_name, u.department, u.short_name FROM diary_logs d
+    let sql = `SELECT d.*, TIMESTAMPDIFF(MINUTE, d.from_time, d.to_time) AS duration_minutes,
+                      u.full_name, u.department, u.short_name FROM diary_logs d
                JOIN users u ON d.employee_id = u.employee_id WHERE d.log_date BETWEEN ? AND ?`;
     const params = [from_date, to_date];
 
@@ -111,12 +136,24 @@ async function diaryReport(req, res) {
     sql += ' ORDER BY d.log_date ASC, d.from_time ASC';
     const [rows] = await pool.query(sql, params);
 
-    if (format === 'excel' && req.query.template === 'staff') {
+    if (template === 'staff' && employee_id) {
+      const templateData = await buildStaffDiaryTemplate(employee_id, from_date, to_date, rows);
+      if (format !== 'excel') {
+        return res.json({ success: true, data: templateData });
+      }
+    }
+
+    if (format === 'excel' && template === 'staff') {
       if (!employee_id) {
         return res.status(400).json({ success: false, message: 'Select an employee for the staff report template.' });
       }
       const templateData = await buildStaffDiaryTemplate(employee_id, from_date, to_date, rows);
-      const buffer = generateStaffDiaryReportBuffer({ fromDate: from_date, toDate: to_date, ...templateData });
+      const buffer = generateStaffDiaryReportBuffer({
+        fromDate: from_date,
+        toDate: to_date,
+        merged: String(merged).toLowerCase() === 'true',
+        ...templateData,
+      });
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="staff_activity_${employee_id}_${from_date}_${to_date}.xlsx"`);
       return res.send(buffer);

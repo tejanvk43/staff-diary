@@ -1,5 +1,20 @@
 const XLSX = require('xlsx');
 
+function formatHours(minutes) {
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (!hours) return `${remainingMinutes}min`;
+  if (!remainingMinutes) return `${hours}hr${hours === 1 ? '' : 's'}`;
+  return `${hours}hr ${remainingMinutes}min`;
+}
+
+function durationMinutes(row) {
+  if (Number.isFinite(Number(row.durationMinutes))) return Number(row.durationMinutes);
+  const match = String(row.hours || '').match(/(?:(\d+)hr)?(?:\s*(\d+)min)?/);
+  if (!match || (!match[1] && !match[2])) return 0;
+  return (Number(match[1] || 0) * 60) + Number(match[2] || 0);
+}
+
 /**
  * Parse an Excel buffer and return an array of row objects.
  * @param {Buffer} buffer
@@ -27,7 +42,7 @@ function generateExcelBuffer(rows, sheetName = 'Sheet1') {
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
 
-function generateStaffDiaryReportBuffer({ employee, fromDate, toDate, summary, rows }) {
+function generateStaffDiaryReportBuffer({ employee, fromDate, toDate, summary, rows, merged = true }) {
   const sheetRows = [
     ['Employee Name', employee.full_name, '', 'Department', employee.department, ''],
     ['', '', '', '', '', ''],
@@ -48,13 +63,17 @@ function generateStaffDiaryReportBuffer({ employee, fromDate, toDate, summary, r
   ];
 
   rows.forEach((row, index) => {
+    const isFirstDateRow = index === 0 || rows[index - 1].date !== row.date;
+    const dailyMinutes = rows
+      .filter(dateRow => dateRow.date === row.date)
+      .reduce((total, dateRow) => total + durationMinutes(dateRow), 0);
     sheetRows.push([
       row.serial || index + 1,
       row.date,
       row.time,
       row.classSection,
       row.description,
-      row.hours,
+      merged ? (isFirstDateRow ? formatHours(dailyMinutes) : '') : row.hours,
     ]);
   });
 
@@ -78,6 +97,26 @@ function generateStaffDiaryReportBuffer({ employee, fromDate, toDate, summary, r
     { s: { r: 12, c: 1 }, e: { r: 12, c: 5 } },
     { s: { r: 13, c: 1 }, e: { r: 13, c: 5 } },
   ];
+  if (merged) {
+    let groupStart = 0;
+    while (groupStart < rows.length) {
+      let groupEnd = groupStart;
+      while (groupEnd + 1 < rows.length && rows[groupEnd + 1].date === rows[groupStart].date) {
+        groupEnd += 1;
+      }
+      if (groupEnd > groupStart) {
+        worksheet['!merges'].push({
+          s: { r: 16 + groupStart, c: 1 },
+          e: { r: 16 + groupEnd, c: 1 },
+        });
+        worksheet['!merges'].push({
+          s: { r: 16 + groupStart, c: 5 },
+          e: { r: 16 + groupEnd, c: 5 },
+        });
+      }
+      groupStart = groupEnd + 1;
+    }
+  }
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Staff Activity Report');
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 }
