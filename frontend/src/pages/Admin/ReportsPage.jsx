@@ -14,6 +14,22 @@ const REPORT_TYPES = [
   { key: 'adjustments', label: 'Class Adjustments',  endpoint: '/api/reports/adjustments' },
 ];
 
+function formatMinutes(minutes) {
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (!hours) return `${remainingMinutes}min`;
+  if (!remainingMinutes) return `${hours}hr${hours === 1 ? '' : 's'}`;
+  return `${hours}hr ${remainingMinutes}min`;
+}
+
+function getRowMinutes(row) {
+  if (Number.isFinite(Number(row.durationMinutes))) return Number(row.durationMinutes);
+  const match = String(row.hours || '').match(/(?:(\d+)hr)?(?:\s*(\d+)min)?/);
+  return match && (match[1] || match[2])
+    ? (Number(match[1] || 0) * 60) + Number(match[2] || 0)
+    : 0;
+}
+
 export default function ReportsPage() {
   const { user } = useAuth();
   const isHod = user?.role === 'HOD';
@@ -23,6 +39,7 @@ export default function ReportsPage() {
   const [users, setUsers]           = useState([]);
   const [selectedUser, setUser]     = useState('');
   const [status, setStatus]         = useState('');
+  const [diaryLayout, setDiaryLayout] = useState('merged');
   const [results, setResults]       = useState(null);
   const [loading, setLoading]       = useState(false);
 
@@ -38,6 +55,7 @@ export default function ReportsPage() {
       const params = new URLSearchParams({ from_date: fromDate, to_date: toDate });
       if (selectedUser) params.append('employee_id', selectedUser);
       if (status)       params.append('status', status);
+      if (reportType === 'diary' && selectedUser) params.append('template', 'staff');
 
       const res = await api.get(`${activeReport.endpoint}?${params}`);
       setResults(res.data.data);
@@ -55,7 +73,10 @@ export default function ReportsPage() {
       return;
     }
     const params = new URLSearchParams({ from_date: fromDate, to_date: toDate, format: 'excel' });
-    if (reportType === 'diary') params.append('template', 'staff');
+    if (reportType === 'diary') {
+      params.append('template', 'staff');
+      params.append('merged', diaryLayout === 'merged' ? 'true' : 'false');
+    }
     if (selectedUser) params.append('employee_id', selectedUser);
     try {
       const token = localStorage.getItem('token');
@@ -107,6 +128,46 @@ export default function ReportsPage() {
         </table>
       </div>
     );
+  };
+
+  const renderDiaryTemplate = (data) => {
+    if (!data?.rows?.length) return <div className="empty-state" style={{ padding: 40 }}><p>No data for selected filters.</p></div>;
+    const summaryItems = [
+      ['Working Days', data.summary.workingDays], ['OD', data.summary.odDays],
+      ['Leave', data.summary.leaveDays], ['Total Worked Days', data.summary.totalWorkedDays],
+      ['Theory Hours', data.summary.theoryHours], ['Lab Hours', data.summary.labHours],
+      ['Other Hours', data.summary.otherHours], ['Total Hours', data.summary.totalHours],
+    ];
+    return <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
+        <div><strong>Employee Name</strong><div>{data.employee.full_name}</div></div>
+        <div><strong>Department</strong><div>{data.employee.department}</div></div>
+        <div><strong>Period</strong><div>{fromDate} to {toDate}</div></div>
+      </div>
+      <div className="table-wrapper" style={{ marginBottom: 18 }}><table><thead><tr><th>Summary</th><th>Value</th></tr></thead><tbody>
+        {summaryItems.map(([label, value]) => <tr key={label}><td>{label}</td><td>{value}</td></tr>)}
+      </tbody></table></div>
+      <div className="table-wrapper"><table><thead><tr>{['S.NO', 'DATE', 'TIME', 'CLASS & SEC', 'DESCRIPTION / Reason', 'No of Working Hours'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
+        {data.rows.map((row, index) => {
+          const isMerged = diaryLayout === 'merged';
+          const isFirstDateRow = !isMerged || index === 0 || data.rows[index - 1].date !== row.date;
+          const dateSpan = isMerged && isFirstDateRow
+            ? data.rows.slice(index).findIndex(nextRow => nextRow.date !== row.date)
+            : 0;
+          const rowSpan = isMerged && isFirstDateRow ? (dateSpan === -1 ? data.rows.length - index : dateSpan) : 1;
+          const dailyMinutes = data.rows
+            .filter(dateRow => dateRow.date === row.date)
+            .reduce((total, dateRow) => total + getRowMinutes(dateRow), 0);
+          const dailyHours = isMerged && isFirstDateRow ? formatMinutes(dailyMinutes) : row.hours;
+          return <tr key={`${row.serial}-${row.date}-${row.time}`}>
+            <td>{row.serial}</td>
+            {isFirstDateRow && <td rowSpan={rowSpan}>{row.date}</td>}
+            <td>{row.time}</td><td>{row.classSection}</td><td>{row.description || '—'}</td>
+            {isFirstDateRow && <td rowSpan={rowSpan}>{dailyHours}</td>}
+          </tr>;
+        })}
+      </tbody></table></div>
+    </div>;
   };
 
   return (
@@ -169,6 +230,15 @@ export default function ReportsPage() {
                       </select>
                     </div>
                   )}
+                  {reportType === 'diary' && selectedUser && (
+                    <div style={{ flex: 1, minWidth: 190 }}>
+                      <label className="form-label" htmlFor="diary-layout">Staff report layout</label>
+                      <select id="diary-layout" className="input" value={diaryLayout} onChange={e => setDiaryLayout(e.target.value)}>
+                        <option value="merged">Merged dates</option>
+                        <option value="unmerged">Date on every row</option>
+                      </select>
+                    </div>
+                  )}
                 </>
               )}
               <div style={{ display: 'flex', gap: 8 }}>
@@ -185,7 +255,9 @@ export default function ReportsPage() {
           </div>
 
           {/* Results */}
-          {results !== null && renderTable(results)}
+          {results !== null && (reportType === 'diary' && selectedUser && results?.summary
+            ? renderDiaryTemplate(results)
+            : renderTable(results))}
         </div>
       </div>
     </AppLayout>
